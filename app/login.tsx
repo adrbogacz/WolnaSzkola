@@ -97,7 +97,7 @@ export default function LoginScreen() {
 
           <Text style={[styles.label, { color: theme.text }]}>Login z dziennika</Text>
           <Text style={[styles.hint, { color: theme.muted }]}>
-            Same cyfry, jak w aplikacji Librus. Nie e-mail z Gmaila.
+Login do Librus Synergia.
           </Text>
           <TextInput
             autoCapitalize="none"
@@ -121,11 +121,7 @@ export default function LoginScreen() {
               autoComplete="off"
               textContentType="none"
               importantForAutofill="no"
-              placeholder={
-                Platform.OS === 'ios'
-                  ? 'Hasło z aplikacji Librus, nie z iCloud'
-                  : 'Hasło z aplikacji Librus, nie z Google'
-              }
+              placeholder="Hasło do Librus Synergia"
               placeholderTextColor={theme.muted}
               secureTextEntry={hidden}
               style={[
@@ -173,13 +169,11 @@ export default function LoginScreen() {
 
           {Platform.OS === 'web' ? (
             <Text style={[styles.note, { color: theme.muted }]}>
-              W przeglądarce hasło nie jest tak dobrze chronione jak na telefonie. Do codziennego użytku lepiej
-              zainstalować aplikację na Androidzie.
+              W przeglądarce hasło nie jest zapamiętywane. Po odświeżeniu strony trzeba zalogować się ponownie.
             </Text>
           ) : (
             <Text style={[styles.note, { color: theme.muted }]}>
-              To nieoficjalna, darmowa aplikacja. Wpisz ręcznie login i hasło z dziennika — te same, którymi
-              wchodzisz do aplikacji Librus. Hasło z konta Google albo iCloud tu nie wejdzie.
+              To nieoficjalna, darmowa aplikacja. Użyj loginu i hasła do Librus Synergia.
             </Text>
           )}
 

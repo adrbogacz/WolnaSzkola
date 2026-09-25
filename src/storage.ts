@@ -14,6 +14,11 @@ const HIDE_STATE = 'wolnaszkola.hideState';
 const SETTINGS = 'wolnaszkola.settings';
 const SEEN_MESSAGES = 'wolnaszkola.seenMessages';
 const READ_CHUNK = 1800;
+const webSecrets = new Map<string, string>();
+
+function isCredentialKey(key: string): boolean {
+  return key === EMAIL || key === PASSWORD || key === ACCOUNTS || key.startsWith(`${ACCOUNTS}.`);
+}
 
 async function read(key: string): Promise<string | null> {
   if (Platform.OS === 'web') {
@@ -30,6 +35,29 @@ async function write(key: string, value: string | null): Promise<void> {
   }
   if (value === null) await SecureStore.deleteItemAsync(key);
   else await SecureStore.setItemAsync(key, value);
+}
+
+async function readSecret(key: string): Promise<string | null> {
+  if (Platform.OS === 'web') return webSecrets.get(key) ?? null;
+  return SecureStore.getItemAsync(key);
+}
+
+async function writeSecret(key: string, value: string | null): Promise<void> {
+  if (Platform.OS === 'web') {
+    if (value === null) webSecrets.delete(key);
+    else webSecrets.set(key, value);
+    return;
+  }
+  if (value === null) await SecureStore.deleteItemAsync(key);
+  else await SecureStore.setItemAsync(key, value);
+}
+
+function purgeWebCredentials(): void {
+  const storage = globalThis.localStorage;
+  if (!storage) return;
+  for (const key of Object.keys(storage)) {
+    if (isCredentialKey(key)) storage.removeItem(key);
+  }
 }
 
 export type StoredAccount = {
@@ -51,15 +79,16 @@ export type StoredSession = {
 };
 
 export async function loadAccounts(): Promise<{ activeId: string | null; accounts: StoredAccount[] }> {
-  const parsed = parseAccounts(await readChunked(ACCOUNTS));
+  if (Platform.OS === 'web') await adoptLegacyWebCredentials();
+  const parsed = parseAccounts(await readSecretChunked(ACCOUNTS));
   if (parsed.length > 0) {
     const activeId = (await read(ACTIVE_ACCOUNT)) ?? parsed[0]?.id ?? null;
     const active = parsed.find((account) => account.id === activeId) ? activeId : parsed[0]?.id ?? null;
     return { activeId: active, accounts: parsed };
   }
 
-  const email = await read(EMAIL);
-  const password = await read(PASSWORD);
+  const email = await readSecret(EMAIL);
+  const password = await readSecret(PASSWORD);
   if (!email || !password) return { activeId: null, accounts: [] };
   const migrated: StoredAccount = {
     id: email,
@@ -70,15 +99,15 @@ export async function loadAccounts(): Promise<{ activeId: string | null; account
     childLogin: (await read(CHILD_LOGIN)) ?? undefined,
   };
   await saveAccounts([migrated], migrated.id);
-  await write(EMAIL, null);
-  await write(PASSWORD, null);
+  await writeSecret(EMAIL, null);
+  await writeSecret(PASSWORD, null);
   await write(CHILD_ID, null);
   await write(CHILD_LOGIN, null);
   return { activeId: migrated.id, accounts: [migrated] };
 }
 
 export async function saveAccounts(accounts: StoredAccount[], activeId: string | null): Promise<void> {
-  await writeChunked(ACCOUNTS, JSON.stringify(accounts));
+  await writeSecretChunked(ACCOUNTS, JSON.stringify(accounts));
   await write(ACTIVE_ACCOUNT, activeId);
 }
 
@@ -133,10 +162,11 @@ export async function saveAccountLabel(accountId: string, label: string): Promis
 }
 
 export async function clearSession(): Promise<void> {
-  await writeChunked(ACCOUNTS, JSON.stringify([]));
+  await writeSecretChunked(ACCOUNTS, JSON.stringify([]));
   await write(ACTIVE_ACCOUNT, null);
-  await write(EMAIL, null);
-  await write(PASSWORD, null);
+  await writeSecret(EMAIL, null);
+  await writeSecret(PASSWORD, null);
+  if (Platform.OS === 'web') purgeWebCredentials();
   await write(CHILD_ID, null);
   await write(CHILD_LOGIN, null);
   await write(SEEN_MESSAGES, null);
@@ -263,12 +293,54 @@ async function readChunked(prefix: string): Promise<string> {
   return (await read(prefix)) ?? '';
 }
 
+async function readSecretChunked(prefix: string): Promise<string> {
+  const count = Number((await readSecret(`${prefix}.n`)) ?? '0');
+  if (count > 0) {
+    let raw = '';
+    for (let index = 0; index < count; index += 1) {
+      raw += (await readSecret(`${prefix}.${index}`)) ?? '';
+    }
+    return raw;
+  }
+  return (await readSecret(prefix)) ?? '';
+}
+
 async function writeChunked(prefix: string, raw: string): Promise<void> {
   const chunks = Math.max(1, Math.ceil(raw.length / READ_CHUNK));
   await write(`${prefix}.n`, String(chunks));
   for (let index = 0; index < chunks; index += 1) {
     await write(`${prefix}.${index}`, raw.slice(index * READ_CHUNK, (index + 1) * READ_CHUNK));
   }
+}
+
+async function writeSecretChunked(prefix: string, raw: string): Promise<void> {
+  const chunks = Math.max(1, Math.ceil(raw.length / READ_CHUNK));
+  await writeSecret(`${prefix}.n`, String(chunks));
+  for (let index = 0; index < chunks; index += 1) {
+    await writeSecret(`${prefix}.${index}`, raw.slice(index * READ_CHUNK, (index + 1) * READ_CHUNK));
+  }
+}
+
+async function adoptLegacyWebCredentials(): Promise<void> {
+  const storage = globalThis.localStorage;
+  if (!storage) return;
+  if ((await readSecretChunked(ACCOUNTS)) === '') {
+    const count = Number(storage.getItem(`${ACCOUNTS}.n`) ?? '0');
+    let raw = '';
+    if (count > 0) {
+      for (let index = 0; index < count; index += 1) raw += storage.getItem(`${ACCOUNTS}.${index}`) ?? '';
+    } else {
+      raw = storage.getItem(ACCOUNTS) ?? '';
+    }
+    if (raw) await writeSecretChunked(ACCOUNTS, raw);
+  }
+  if (!(await readSecret(EMAIL)) && storage.getItem(EMAIL)) {
+    await writeSecret(EMAIL, storage.getItem(EMAIL));
+  }
+  if (!(await readSecret(PASSWORD)) && storage.getItem(PASSWORD)) {
+    await writeSecret(PASSWORD, storage.getItem(PASSWORD));
+  }
+  purgeWebCredentials();
 }
 
 export type SchoolCacheEntry<T> = { savedAt: number; data: T };

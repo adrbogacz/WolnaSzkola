@@ -97,3 +97,14 @@ private struct Xcode26UncheckedSendable<Value>: @unchecked Sendable {
 
   return next.replace('\nprivate func createFunctionClosure(\n', `${helper}private func createFunctionClosure(\n`);
 });
+
+const queryString = path.join(__dirname, '..', 'node_modules', 'query-string', 'index.js');
+if (fs.existsSync(queryString)) {
+  const source = fs.readFileSync(queryString, 'utf8');
+  const from = "const decodeComponent = require('decode-uri-component');";
+  const to = "const decodeExport = require('decode-uri-component');\nconst decodeComponent = typeof decodeExport === 'function' ? decodeExport : decodeExport.default;";
+  if (source.includes(from)) {
+    fs.writeFileSync(queryString, source.replace(from, to));
+    console.log('patched query-string decode-uri-component import');
+  }
+}

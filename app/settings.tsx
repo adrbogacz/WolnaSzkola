@@ -127,8 +127,7 @@ export default function SettingsScreen() {
         <>
           <Text style={[styles.section, { color: theme.muted }]}>Przeglądarka</Text>
           <Text style={[styles.note, { color: theme.muted }]}>
-            W przeglądarce hasło nie jest tak dobrze chronione jak na telefonie. Do codziennego użytku lepiej
-            zainstalować aplikację na Androidzie.
+            W przeglądarce hasło nie jest zapamiętywane. Po odświeżeniu strony trzeba zalogować się ponownie.
           </Text>
         </>
       ) : null}

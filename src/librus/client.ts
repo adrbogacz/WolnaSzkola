@@ -159,11 +159,11 @@ export class LibrusClient {
 
       if (this.email.includes('@') || !/^\d+$/.test(this.email)) {
         throw new KlasowaError(
-          'W aplikacji Librus logujesz się loginem z dziennika — same cyfry, jak w aplikacji Librus. Nie e-mailem z Gmaila.',
+          'Login do Librus Synergia to ciąg cyfr.',
         );
       }
 
-      logLogin(`loginLen=${this.email.length} loginMask=${maskLogin(this.email)} passwordLen=${this.password.length}`);
+      logLogin(`loginLen=${this.email.length} loginMask=${maskLogin(this.email)}`);
       return await this.loginNumericOAuth(this.email, this.password);
     } catch (error) {
       logLogin(`FAIL ${error instanceof Error ? error.message : String(error)}`);
@@ -229,7 +229,7 @@ export class LibrusClient {
         logLogin(`oauth-post ${summarizeJson(postedPayload)}`);
       } catch {
         throw new KlasowaError(
-          'Nie udało się zalogować. Wpisz login z dziennika (same cyfry) i hasło z aplikacji Librus albo z kartki ze szkoły — nie hasło do Gmaila.',
+          'Nie udało się zalogować. Sprawdź login i hasło do Librus Synergia.',
           posted.status,
         );
       }
@@ -239,7 +239,7 @@ export class LibrusClient {
         logLogin(`oauth-post rejected librus="${fromLibrus ?? ''}"`);
         throw new KlasowaError(
           fromLibrus ||
-            'Nie udało się zalogować. Wpisz login z dziennika (same cyfry) i hasło z aplikacji Librus albo z kartki ze szkoły.',
+            'Nie udało się zalogować. Sprawdź login i hasło do Librus Synergia.',
           posted.status,
         );
       }

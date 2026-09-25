@@ -308,11 +308,15 @@ export function decodeHtmlEntities(value: string): string {
 }
 
 export function htmlToText(html: string): string {
-  const stripped = html
+  let stripped = html
     .replace(/<\s*br\s*\/?\s*>/gi, '\n')
     .replace(/<\/\s*p\s*>/gi, '\n\n')
-    .replace(/<\/\s*div\s*>/gi, '\n')
-    .replace(/<[^>]+>/g, '');
+    .replace(/<\/\s*div\s*>/gi, '\n');
+  let previous = '';
+  while (stripped !== previous) {
+    previous = stripped;
+    stripped = stripped.replace(/<[^>]*>/g, '');
+  }
   return repairMojibake(decodeHtmlEntities(stripped))
     .replace(/\n{3,}/g, '\n\n')
     .trim();
