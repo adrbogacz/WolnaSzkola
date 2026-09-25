@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  apk:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
+      - run: npm ci
+      - name: Build release APK
+        run: |
+          npx expo prebuild --platform android --non-interactive
+          cd android
+          ./gradlew :app:assembleRelease
+          cd ..
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/*.apk dist/WolnaSzkola.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.sha }}
+          name: WolnaSzkoła ${{ github.sha }}
+          make_latest: true
+          files: dist/WolnaSzkola.apk
+          body: APK z commita ${{ github.sha }}.
