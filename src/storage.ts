@@ -17,7 +17,13 @@ const READ_CHUNK = 1800;
 const webSecrets = new Map<string, string>();
 
 function isCredentialKey(key: string): boolean {
-  return key === EMAIL || key === PASSWORD || key === ACCOUNTS || key.startsWith(`${ACCOUNTS}.`);
+  return (
+    key === EMAIL ||
+    key === PASSWORD ||
+    key === ACTIVE_ACCOUNT ||
+    key === ACCOUNTS ||
+    key.startsWith(`${ACCOUNTS}.`)
+  );
 }
 
 async function read(key: string): Promise<string | null> {
@@ -82,7 +88,7 @@ export async function loadAccounts(): Promise<{ activeId: string | null; account
   if (Platform.OS === 'web') await adoptLegacyWebCredentials();
   const parsed = parseAccounts(await readSecretChunked(ACCOUNTS));
   if (parsed.length > 0) {
-    const activeId = (await read(ACTIVE_ACCOUNT)) ?? parsed[0]?.id ?? null;
+    const activeId = (await readSecret(ACTIVE_ACCOUNT)) ?? parsed[0]?.id ?? null;
     const active = parsed.find((account) => account.id === activeId) ? activeId : parsed[0]?.id ?? null;
     return { activeId: active, accounts: parsed };
   }
@@ -108,7 +114,7 @@ export async function loadAccounts(): Promise<{ activeId: string | null; account
 
 export async function saveAccounts(accounts: StoredAccount[], activeId: string | null): Promise<void> {
   await writeSecretChunked(ACCOUNTS, JSON.stringify(accounts));
-  await write(ACTIVE_ACCOUNT, activeId);
+  await writeSecret(ACTIVE_ACCOUNT, activeId);
 }
 
 export async function loadSession(): Promise<StoredSession | null> {
@@ -163,7 +169,7 @@ export async function saveAccountLabel(accountId: string, label: string): Promis
 
 export async function clearSession(): Promise<void> {
   await writeSecretChunked(ACCOUNTS, JSON.stringify([]));
-  await write(ACTIVE_ACCOUNT, null);
+  await writeSecret(ACTIVE_ACCOUNT, null);
   await writeSecret(EMAIL, null);
   await writeSecret(PASSWORD, null);
   if (Platform.OS === 'web') purgeWebCredentials();
@@ -339,6 +345,9 @@ async function adoptLegacyWebCredentials(): Promise<void> {
   }
   if (!(await readSecret(PASSWORD)) && storage.getItem(PASSWORD)) {
     await writeSecret(PASSWORD, storage.getItem(PASSWORD));
+  }
+  if (!(await readSecret(ACTIVE_ACCOUNT)) && storage.getItem(ACTIVE_ACCOUNT)) {
+    await writeSecret(ACTIVE_ACCOUNT, storage.getItem(ACTIVE_ACCOUNT));
   }
   purgeWebCredentials();
 }
