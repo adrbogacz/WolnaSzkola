@@ -44,5 +44,9 @@
     "test": "npx tsx scripts/test-grades.ts && npx tsx scripts/test-messages.ts && npx tsx scripts/test-http.ts && npx tsx scripts/test-receivers.ts",
     "postinstall": "node scripts/patch-expo-modules-jsi.js"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "decode-uri-component": "0.5.0",
+    "uuid": "11.1.1"
+  }
 }
