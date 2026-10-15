@@ -44,8 +44,12 @@
     "android:apk": "zsh scripts/build-android-apk.sh",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "npx tsx scripts/test-grades.ts && npx tsx scripts/test-messages.ts && npx tsx scripts/test-http.ts && npx tsx scripts/test-receivers.ts",
-    "postinstall": "node scripts/patch-expo-modules-jsi.js"
+    "test": "node scripts/test-support/run.mjs",
+    "postinstall": "node scripts/patch-expo-modules-jsi.js",
+    "e2e:mock": "node --experimental-strip-types --no-warnings --import ./scripts/test-support/register.mjs e2e/mock-librus.ts",
+    "e2e:metro": "EXPO_PUBLIC_E2E=1 EXPO_PUBLIC_LIBRUS_MOCK_URL=http://localhost:9091 expo start",
+    "e2e:build": "detox build -c android.emu.debug",
+    "e2e": "detox test -c android.emu.debug"
   },
   "private": true,
   "overrides": {

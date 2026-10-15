@@ -83,14 +83,17 @@ export function PrimaryButton({
   label,
   onPress,
   disabled,
+  testID,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  testID?: string;
 }) {
   const theme = useTheme();
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"

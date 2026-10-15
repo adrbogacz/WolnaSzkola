@@ -4,7 +4,7 @@ import { decodeBytesAsText } from '@/src/format';
 
 import { KlasowaError } from './errors';
 import { isLoginLogActive, logNet, sanitizeUrl } from './loginLog';
-import { librusHttpsUrl } from './urls';
+import { librusHttpsUrl, librusMockUrl } from './urls';
 
 type Cookie = {
   name: string;
@@ -84,7 +84,7 @@ export async function sessionFetch(
   url: string,
   init: SessionRequestInit = {},
 ): Promise<Response> {
-  url = librusHttpsUrl(url);
+  url = librusMockUrl(librusHttpsUrl(url));
   const headers = new Headers(init.headers);
   // Never set User-Agent on iOS/Android: it breaks the native cookie store,
   // so Librus accepts the form and then the next request looks logged-out.

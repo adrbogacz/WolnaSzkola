@@ -107,6 +107,7 @@ export default function TabLayout() {
         name="messages"
         options={{
           title: 'Wiadomości',
+          tabBarButtonTestID: 'tab-messages',
           headerTitle: () => <AccountTitle />,
           headerRight: () => (
             <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 8 }}>

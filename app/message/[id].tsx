@@ -5,6 +5,7 @@ import * as Clipboard from 'expo-clipboard';
 
 import { useAuth } from '@/src/auth/AuthContext';
 import { formatSentAt } from '@/src/format';
+import { FrameProbe } from '@/src/e2e/FrameProbe';
 import { useSchoolQuery } from '@/src/hooks/useSchoolQuery';
 import { alignMessageFields, composeReplyParams } from '@/src/reply';
 import { Card, LoadingState, PrimaryButton, ScreenMessage, SyncBanner, useTheme } from '@/src/ui';
@@ -72,6 +73,7 @@ export default function MessageDetailScreen() {
       testID="message-detail"
       style={{ backgroundColor: theme.background }}
       contentContainerStyle={styles.content}>
+      <FrameProbe />
       {query.syncError && !bodyError ? <SyncBanner error={query.syncError} onRetry={() => void query.reload(true)} /> : null}
       <Text testID="message-topic" selectable style={[styles.topic, { color: theme.text }]}>
         {aligned.topic}

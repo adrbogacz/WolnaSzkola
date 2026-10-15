@@ -108,6 +108,7 @@ Login do Librus Synergia.
             textContentType="none"
             importantForAutofill="no"
             placeholder="Login z dziennika"
+            testID="login-input"
             placeholderTextColor={theme.muted}
             style={[styles.input, { color: theme.text, backgroundColor: theme.card, borderColor: theme.line }]}
             value={email}
@@ -122,6 +123,7 @@ Login do Librus Synergia.
               textContentType="none"
               importantForAutofill="no"
               placeholder="Hasło do Librus Synergia"
+              testID="password-input"
               placeholderTextColor={theme.muted}
               secureTextEntry={hidden}
               style={[
@@ -163,6 +165,7 @@ Login do Librus Synergia.
 
           <PrimaryButton
             label={busy ? 'Loguję…' : 'Zaloguj'}
+            testID="login-submit"
             onPress={() => void onSubmit()}
             disabled={!canSubmit}
           />
