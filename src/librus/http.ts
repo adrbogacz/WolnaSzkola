@@ -74,10 +74,15 @@ export class CookieJar {
 
 export { librusHttpsUrl } from './urls';
 
+/** Every request gets a deadline so a stalled Librus server never leaves a spinner running forever. */
+export const httpConfig = { timeoutMs: 15_000 };
+
+export type SessionRequestInit = RequestInit & { timeoutMs?: number };
+
 export async function sessionFetch(
   jar: CookieJar,
   url: string,
-  init: RequestInit = {},
+  init: SessionRequestInit = {},
 ): Promise<Response> {
   url = librusHttpsUrl(url);
   const headers = new Headers(init.headers);
@@ -102,26 +107,44 @@ export async function sessionFetch(
     );
   }
 
+  const { timeoutMs = httpConfig.timeoutMs, signal: callerSignal, ...requestInit } = init;
+  const controller = new AbortController();
+  const onCallerAbort = () => controller.abort();
+  callerSignal?.addEventListener('abort', onCallerAbort);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
   let response: Response;
   try {
     response = await fetch(url, {
-      ...init,
+      ...requestInit,
       headers,
       credentials: 'include',
+      signal: controller.signal,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (verbose) {
-      logNet(`  network-fail ${message}`);
+      logNet(`  network-fail ${timedOut ? 'timeout' : message}`);
     }
-    if (/CLEARTEXT|cleartext/i.test(message) && /^http:/i.test(url)) {
+    if (!timedOut && /CLEARTEXT|cleartext/i.test(message) && /^http:/i.test(url)) {
       return sessionFetch(jar, librusHttpsUrl(url), init);
+    }
+    if (timedOut) {
+      throw new KlasowaError('Librus nie odpowiada. Spróbuj ponownie za chwilę.', undefined, error, 'timeout');
     }
     throw new KlasowaError(
       'Nie udało się połączyć z serwerem. Sprawdź internet i spróbuj ponownie.',
       undefined,
       error,
+      'offline',
     );
+  } finally {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener('abort', onCallerAbort);
   }
 
   if (response.status >= 300 && response.status < 400) {
@@ -143,7 +166,7 @@ export async function sessionFetch(
 export async function sessionFetchFollow(
   jar: CookieJar,
   url: string,
-  init: RequestInit = {},
+  init: SessionRequestInit = {},
   maxHops = 10,
 ): Promise<Response> {
   let currentUrl = librusHttpsUrl(url);
@@ -212,6 +235,7 @@ export async function readJson(response: Response, endpoint: string): Promise<un
       'Serwer zwrócił nieoczekiwaną odpowiedź. Spróbuj ponownie za chwilę.',
       response.status,
       { endpoint },
+      'malformed',
     );
   }
 }

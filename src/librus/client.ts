@@ -3,7 +3,7 @@ import { namesMatch } from '@/src/reply';
 import { loadSchoolCache, saveSchoolCache } from '@/src/storage';
 
 import { CookieJar, readJson, readResponseText, sessionFetch, sessionFetchFollow } from './http';
-import { KlasowaError } from './errors';
+import { KlasowaError, StaleResultError, isConnectivityError } from './errors';
 import { combineGrades, gradeNumericId } from './gradesCombine';
 import {
   INBOX_TTL_MS,
@@ -91,7 +91,13 @@ export class LibrusClient {
   private portalReady = false;
   private wiadomosciReady = false;
   private lastFreshAt = 0;
-  private recovering = false;
+  /** In-flight re-login and wiadomosci bootstrap, shared so parallel screens never race on the cookie jar. */
+  private recovery: Promise<void> | null = null;
+  private wiadomosciBoot: Promise<void> | null = null;
+  /** Bumped on every child/account change; results started under an older value are dropped. */
+  private generation = 0;
+  /** Messages whose detail GET on wiadomosci already marked them read on the server. */
+  private readOnOpen = new Set<string>();
   private inboxCache: SchoolMessage[] = [];
   private sentCache: SchoolMessage[] = [];
   private noticeCache: SchoolMessage[] = [];
@@ -112,6 +118,8 @@ export class LibrusClient {
   }
 
   resetSession(): void {
+    this.generation += 1;
+    this.readOnOpen.clear();
     this.jar.clear();
     this.email = '';
     this.password = '';
@@ -324,6 +332,7 @@ export class LibrusClient {
     const same = this.child?.id === child.id && this.child.login === child.login;
     this.child = child;
     if (same) return;
+    this.generation += 1;
     this.inboxCache = [];
     this.sentCache = [];
     this.noticeCache = [];
@@ -335,23 +344,27 @@ export class LibrusClient {
   }
 
   async getMessages(options?: { force?: boolean }): Promise<SchoolMessage[]> {
+    const generation = this.generation;
+    const scope = this.cacheScope();
     const loaded = await loadWithTtl({
       force: options?.force,
       memory: this.inboxAt ? { savedAt: this.inboxAt, data: this.inboxCache } : null,
       ttlMs: INBOX_TTL_MS,
-      loadDisk: () => loadSchoolCache<SchoolMessage[]>(this.cacheScope(), 'inbox'),
+      loadDisk: () => loadSchoolCache<SchoolMessage[]>(scope, 'inbox'),
       fetchNetwork: () => this.fetchMessagesFromNetwork(),
     });
+    this.assertGeneration(generation);
     this.inboxCache = loaded.data;
     this.inboxAt = loaded.entry.savedAt;
-    if (loaded.fromNetwork) await saveSchoolCache(this.cacheScope(), 'inbox', loaded.data, loaded.entry.savedAt);
+    if (loaded.fromNetwork) await saveSchoolCache(scope, 'inbox', loaded.data, loaded.entry.savedAt);
     return loaded.data;
   }
 
   async peekMessages(): Promise<SchoolMessage[] | null> {
     if (this.inboxCache.length > 0) return this.inboxCache;
+    const generation = this.generation;
     const disk = await loadSchoolCache<SchoolMessage[]>(this.cacheScope(), 'inbox');
-    if (!disk?.data) return null;
+    if (!disk?.data || generation !== this.generation) return null;
     this.inboxCache = disk.data;
     this.inboxAt = disk.savedAt;
     return disk.data;
@@ -368,6 +381,8 @@ export class LibrusClient {
     } catch (error) {
       wiadomosciError = error;
       logNet(`inbox api fail ${error instanceof Error ? error.message : String(error)}`);
+      // Offline or Librus not answering: the fallbacks below would only add more timeouts.
+      if (isConnectivityError(error)) throw error;
     }
 
     try {
@@ -377,7 +392,8 @@ export class LibrusClient {
         ),
       );
       if (parsed.length > 0) return sortNewest(parsed);
-    } catch {
+    } catch (error) {
+      if (isConnectivityError(error)) throw error;
       // Cookie session uses the HTML inbox on synergia.librus.pl.
     }
 
@@ -393,23 +409,27 @@ export class LibrusClient {
   }
 
   async getAnnouncements(options?: { force?: boolean }): Promise<SchoolMessage[]> {
+    const generation = this.generation;
+    const scope = this.cacheScope();
     const loaded = await loadWithTtl({
       force: options?.force,
       memory: this.noticeAt ? { savedAt: this.noticeAt, data: this.noticeCache } : null,
       ttlMs: INBOX_TTL_MS,
-      loadDisk: () => loadSchoolCache<SchoolMessage[]>(this.cacheScope(), 'notices'),
+      loadDisk: () => loadSchoolCache<SchoolMessage[]>(scope, 'notices'),
       fetchNetwork: () => this.fetchAnnouncementsFromNetwork(),
     });
+    this.assertGeneration(generation);
     this.noticeCache = loaded.data;
     this.noticeAt = loaded.entry.savedAt;
-    if (loaded.fromNetwork) await saveSchoolCache(this.cacheScope(), 'notices', loaded.data, loaded.entry.savedAt);
+    if (loaded.fromNetwork) await saveSchoolCache(scope, 'notices', loaded.data, loaded.entry.savedAt);
     return loaded.data;
   }
 
   async peekAnnouncements(): Promise<SchoolMessage[] | null> {
     if (this.noticeCache.length > 0) return this.noticeCache;
+    const generation = this.generation;
     const disk = await loadSchoolCache<SchoolMessage[]>(this.cacheScope(), 'notices');
-    if (!disk?.data) return null;
+    if (!disk?.data || generation !== this.generation) return null;
     this.noticeCache = disk.data;
     this.noticeAt = disk.savedAt;
     return disk.data;
@@ -432,53 +452,69 @@ export class LibrusClient {
   }
 
   async getSentMessages(options?: { force?: boolean }): Promise<SchoolMessage[]> {
+    const generation = this.generation;
+    const scope = this.cacheScope();
     const loaded = await loadWithTtl({
       force: options?.force,
       memory: this.sentAt ? { savedAt: this.sentAt, data: this.sentCache } : null,
       ttlMs: INBOX_TTL_MS,
-      loadDisk: () => loadSchoolCache<SchoolMessage[]>(this.cacheScope(), 'sent'),
+      loadDisk: () => loadSchoolCache<SchoolMessage[]>(scope, 'sent'),
       fetchNetwork: () => this.fetchSentMessagesFromNetwork(),
     });
+    this.assertGeneration(generation);
     this.sentCache = loaded.data;
     this.sentAt = loaded.entry.savedAt;
-    if (loaded.fromNetwork) await saveSchoolCache(this.cacheScope(), 'sent', loaded.data, loaded.entry.savedAt);
+    if (loaded.fromNetwork) await saveSchoolCache(scope, 'sent', loaded.data, loaded.entry.savedAt);
     return loaded.data;
   }
 
   async peekSentMessages(): Promise<SchoolMessage[] | null> {
     if (this.sentCache.length > 0) return this.sentCache;
+    const generation = this.generation;
     const disk = await loadSchoolCache<SchoolMessage[]>(this.cacheScope(), 'sent');
-    if (!disk?.data) return null;
+    if (!disk?.data || generation !== this.generation) return null;
     this.sentCache = disk.data;
     this.sentAt = disk.savedAt;
     return disk.data;
   }
 
   private async fetchSentMessagesFromNetwork(): Promise<SchoolMessage[]> {
-    try {
-      for (const path of ['/api/outbox/messages?page=1&limit=80', '/api/sent/messages?page=1&limit=80']) {
-        try {
-          const parsed = parseMessages(await this.wiadomosciJson(path)).map((item) => ({
-            ...item,
-            id: `w-${item.id.replace(/^w-/, '')}`,
-            kind: 'sent' as const,
-            read: true,
-          }));
-          if (parsed.length > 0) return sortNewest(parsed);
-        } catch {
-          // Next outbox endpoint, then HTML.
-        }
+    for (const path of ['/api/outbox/messages?page=1&limit=80', '/api/sent/messages?page=1&limit=80']) {
+      try {
+        const parsed = parseMessages(await this.wiadomosciJson(path)).map((item) => ({
+          ...item,
+          id: `w-${item.id.replace(/^w-/, '')}`,
+          kind: 'sent' as const,
+          read: true,
+        }));
+        if (parsed.length > 0) return sortNewest(parsed);
+      } catch (error) {
+        if (isConnectivityError(error)) throw error;
+        // Next outbox endpoint, then HTML.
       }
-    } catch {
-      logNet('outbox api fail, trying HTML folder 6');
     }
 
     return sortNewest(await this.scrapeSent());
   }
 
   async getMessage(id: string, options?: { force?: boolean }): Promise<SchoolMessage> {
+    try {
+      return await this.fetchMessage(id, options);
+    } catch (error) {
+      // Offline: an already opened message is still readable from the cache.
+      if (!isConnectivityError(error)) throw error;
+      const cached = this.findCachedMessage(normalizeMessageId(id));
+      if (cached && messageHasBody(cached)) return cached;
+      throw error;
+    }
+  }
+
+  private async fetchMessage(id: string, options?: { force?: boolean }): Promise<SchoolMessage> {
     const normalized = normalizeMessageId(id);
     if (!normalized) throw new KlasowaError('Nie udało się otworzyć wiadomości.');
+    const generation = this.generation;
+    const scope = this.cacheScope();
+    const remember = (message: SchoolMessage) => this.rememberOpenedMessage(message, true, generation, scope);
 
     if (normalized.startsWith('a-')) {
       const notices = this.noticeCache.length > 0 ? this.noticeCache : await this.getAnnouncements();
@@ -499,7 +535,8 @@ export class LibrusClient {
       if (payload) {
         const parsed = parseMessage(unwrapMessagePayload(payload));
         if (parsed.topic || parsed.body) {
-          return this.rememberOpenedMessage(
+          if (!preferSent && normalized.startsWith('w-')) this.readOnOpen.add(normalized);
+          return remember(
             mergeMessages(
               {
                 ...parsed,
@@ -518,7 +555,7 @@ export class LibrusClient {
           const html = await this.synergiaText(`/wiadomosci/1/${folderId}/${numericId}`);
           const detailed = parseMessageDetailHtml(html, normalized);
           if (detailed.body || (detailed.topic && detailed.topic !== '(bez tematu)')) {
-            return this.rememberOpenedMessage(
+            return remember(
               mergeMessages({ ...detailed, id: normalized, kind: folderId === '6' ? 'sent' : 'inbox' }, cached),
             );
           }
@@ -534,7 +571,7 @@ export class LibrusClient {
       const payload = await this.apiJson(`/Messages/${encodeURIComponent(numericId || normalized)}`);
       const parsed = parseMessage(unwrapMessagePayload(payload));
       if (parsed.topic || parsed.body) {
-        return this.rememberOpenedMessage(mergeMessages({ ...parsed, id: normalized }, cached));
+        return remember(mergeMessages({ ...parsed, id: normalized }, cached));
       }
     } catch {
       // HTML inbox.
@@ -546,7 +583,7 @@ export class LibrusClient {
         const html = await this.synergiaText(`/wiadomosci/1/${folderAndId[1]}/${folderAndId[2]}`);
         const detailed = parseMessageDetailHtml(html, normalized);
         if (detailed.body || detailed.topic) {
-          return this.rememberOpenedMessage(
+          return remember(
             mergeMessages({ ...detailed, kind: folderAndId[1] === '6' ? 'sent' : cached?.kind || 'inbox' }, cached),
           );
         }
@@ -570,15 +607,25 @@ export class LibrusClient {
     return memory;
   }
 
-  private rememberOpenedMessage(message: SchoolMessage, persist = true): SchoolMessage {
+  private rememberOpenedMessage(
+    message: SchoolMessage,
+    persist = true,
+    generation = this.generation,
+    scope = this.cacheScope(),
+  ): SchoolMessage {
+    this.assertGeneration(generation);
     const list = message.kind === 'sent' ? this.sentCache : this.inboxCache;
     const index = list.findIndex((item) => item.id === message.id);
     if (index >= 0) list[index] = mergeMessages(message, list[index]);
     else list.unshift(message);
     if (persist && messageHasBody(message)) {
-      void saveSchoolCache(this.cacheScope(), `message:${message.id}`, message);
+      void saveSchoolCache(scope, `message:${message.id}`, message);
     }
     return message;
+  }
+
+  private assertGeneration(generation: number): void {
+    if (generation !== this.generation) throw new StaleResultError();
   }
 
   private cacheScope(): string {
@@ -604,6 +651,8 @@ export class LibrusClient {
   }
 
   async markServerRead(id: string): Promise<void> {
+    // Opening the message already fetched it from wiadomosci, which marks it read there.
+    if (this.readOnOpen.delete(id)) return;
     if (id.startsWith('w-')) {
       try {
         await this.wiadomosciJson(`/api/inbox/messages/${encodeURIComponent(id.slice(2))}`);
@@ -1220,7 +1269,7 @@ export class LibrusClient {
   }
 
   async keepSessionFresh(): Promise<void> {
-    if (!this.email || !this.password || this.recovering) return;
+    if (!this.email || !this.password || this.recovery) return;
     if (Date.now() - this.lastFreshAt < 3 * 60 * 1000) return;
     try {
       await this.refreshOauth();
@@ -1231,27 +1280,31 @@ export class LibrusClient {
     }
   }
 
-  private async recoverSession(): Promise<void> {
-    if (this.recovering) return;
+  /** Concurrent callers share one re-login instead of each logging in over the same cookie jar. */
+  private recoverSession(): Promise<void> {
     if (!this.email || !this.password) {
-      throw new KlasowaError('Sesja w dzienniku wygasła. Zaloguj się ponownie.');
+      return Promise.reject(
+        new KlasowaError('Sesja w dzienniku wygasła. Zaloguj się ponownie.', undefined, undefined, 'auth'),
+      );
     }
-    this.recovering = true;
+    this.recovery ??= this.relogin().finally(() => {
+      this.recovery = null;
+    });
+    return this.recovery;
+  }
+
+  private async relogin(): Promise<void> {
     const previous = this.child;
-    try {
-      const list = await this.login(this.email, this.password);
-      const match =
-        list.find((item) => previous && String(item.id) === String(previous.id)) ??
-        list.find((item) => previous && item.login === previous.login) ??
-        list[0];
-      if (match) {
-        this.child = {
-          ...match,
-          studentName: previous?.studentName || match.studentName,
-        };
-      }
-    } finally {
-      this.recovering = false;
+    const list = await this.login(this.email, this.password);
+    const match =
+      list.find((item) => previous && String(item.id) === String(previous.id)) ??
+      list.find((item) => previous && item.login === previous.login) ??
+      list[0];
+    if (match) {
+      this.child = {
+        ...match,
+        studentName: previous?.studentName || match.studentName,
+      };
     }
   }
 
@@ -1262,8 +1315,16 @@ export class LibrusClient {
     await this.refreshOauth();
   }
 
-  private async ensureWiadomosci(force = false): Promise<void> {
-    if (this.wiadomosciReady && !force) return;
+  /** One wiadomosci bootstrap at a time; the inbox, sent and notice loads all wait for the same one. */
+  private ensureWiadomosci(force = false): Promise<void> {
+    if (this.wiadomosciReady && !force) return Promise.resolve();
+    this.wiadomosciBoot ??= this.bootWiadomosci().finally(() => {
+      this.wiadomosciBoot = null;
+    });
+    return this.wiadomosciBoot;
+  }
+
+  private async bootWiadomosci(): Promise<void> {
     await this.ensurePortal();
     await this.refreshOauth();
     await this.activateWiadomosciUser();
@@ -1350,9 +1411,6 @@ export class LibrusClient {
       throw new KlasowaError('Odpowiedź skrzynki jest zbyt duża.', response.status);
     }
     logNet(`inbox ${response.status} ${path} type=${response.headers.get('content-type') ?? 'none'} bytes=${text.length}`);
-    console.warn(
-      `[WSMSG] ${path} status=${response.status} type=${response.headers.get('content-type') ?? 'none'} bytes=${text.length}`,
-    );
 
     if ((response.status === 401 || response.status === 403) && attempt < 2) {
       this.wiadomosciReady = false;
@@ -1386,6 +1444,8 @@ export class LibrusClient {
       throw new KlasowaError(
         'Skrzynka wiadomości zwróciła nieoczekiwaną odpowiedź. Spróbuj ponownie za chwilę.',
         response.status,
+        undefined,
+        'malformed',
       );
     }
   }
@@ -1394,7 +1454,8 @@ export class LibrusClient {
     try {
       return await this.wiadomosciJson(path);
     } catch (error) {
-      console.warn(`[WSMSG] ${path} fail ${error instanceof Error ? error.message : String(error)}`);
+      logNet(`inbox ${path} fail ${error instanceof Error ? error.message : String(error)}`);
+      if (isConnectivityError(error)) throw error;
       return null;
     }
   }
@@ -1412,7 +1473,7 @@ export class LibrusClient {
       headers,
     });
     await readResponseText(response);
-    if ((response.status === 401 || response.status === 403) && !this.recovering) {
+    if ((response.status === 401 || response.status === 403) && !this.recovery) {
       await this.recoverSession();
       await this.ensureWiadomosci(true);
       const retry = await sessionFetch(this.jar, `${WIADOMOSCI}${path}`, {
@@ -1458,11 +1519,6 @@ export class LibrusClient {
       }
     }
     return false;
-  }
-
-  private async refreshChildToken(): Promise<void> {
-    this.portalReady = false;
-    await this.ensurePortal();
   }
 
   private async scrapeInbox(): Promise<SchoolMessage[]> {
@@ -1797,7 +1853,10 @@ export class LibrusClient {
     });
 
     if (response.status === 401 && attempt < 2) {
-      if (attempt === 0) await this.refreshChildToken();
+      if (attempt === 0) {
+        this.portalReady = false;
+        await this.ensurePortal();
+      }
       else await this.recoverSession();
       return this.apiJson(path, attempt + 1);
     }
