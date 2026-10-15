@@ -23,6 +23,8 @@ export function useSchoolQuery<T>(
   const [syncError, setSyncError] = useState<SyncError | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [refreshing, setRefreshing] = useState(false);
+  /** A network request is in flight, even while cached data is shown. */
+  const [fetching, setFetching] = useState(false);
   const loaderRef = useRef(loader);
   const peekRef = useRef(peek);
   const dataRef = useRef<T | null>(null);
@@ -34,6 +36,7 @@ export function useSchoolQuery<T>(
     const ticket = ++ticketRef.current;
     if (force) setRefreshing(true);
     else if (dataRef.current == null) setLoading(true);
+    setFetching(true);
     setError(null);
     try {
       const next = await loaderRef.current(force);
@@ -50,6 +53,7 @@ export function useSchoolQuery<T>(
       if (ticket === ticketRef.current) {
         setLoading(false);
         setRefreshing(false);
+        setFetching(false);
       }
     }
     // deps describe when to create a new reload function
@@ -84,5 +88,5 @@ export function useSchoolQuery<T>(
     };
   }, [enabled, reload]);
 
-  return { data, error, syncError, loading, refreshing, reload };
+  return { data, error, syncError, loading, refreshing, fetching, reload };
 }

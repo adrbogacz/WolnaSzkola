@@ -596,6 +596,15 @@ export class LibrusClient {
     throw new KlasowaError('Nie udało się otworzyć wiadomości.');
   }
 
+  /** What is already known about a message (at least its list row) for an instant detail header. */
+  async peekMessage(id: string): Promise<SchoolMessage | null> {
+    const normalized = normalizeMessageId(id);
+    if (!normalized) return null;
+    const generation = this.generation;
+    const found = await this.cachedMessageWithBody(normalized);
+    return found && generation === this.generation ? found : null;
+  }
+
   private async cachedMessageWithBody(id: string): Promise<SchoolMessage | undefined> {
     const memory = this.findCachedMessage(id);
     if (messageHasBody(memory)) return memory;

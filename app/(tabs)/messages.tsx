@@ -1,14 +1,14 @@
-import { useCallback, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Redirect, router, useFocusEffect } from 'expo-router';
 import { Swipeable } from 'react-native-gesture-handler';
 
 import { useAuth } from '@/src/auth/AuthContext';
-import { formatDate, formatDateTime, listContentStyle, sortNewest } from '@/src/format';
+import { formatSentAt, listContentStyle, sortNewest } from '@/src/format';
 import { useSchoolQuery } from '@/src/hooks/useSchoolQuery';
 import type { HideStatus } from '@/src/appSettings';
 import type { SchoolMessage } from '@/src/librus/types';
-import { Card, DemoBanner, LoadingState, ScreenMessage, useTheme } from '@/src/ui';
+import { Card, DemoBanner, LoadingState, ScreenMessage, SyncBanner, useTheme } from '@/src/ui';
 import { alignMessageFields, composeReplyParams } from '@/src/reply';
 import { palette } from '@/constants/Colors';
 
@@ -42,48 +42,91 @@ export default function MessagesScreen() {
   const { status, isDemo, api, isItemRead, setItemRead, hideStatus, hideItem, showArchived } = useAuth();
   const theme = useTheme();
   const [tab, setTab] = useState<InboxTab>('inbox');
+  // Tabs load the first time they are opened, not all three at startup.
+  const [opened, setOpened] = useState<Record<InboxTab, boolean>>({ inbox: true, sent: false, notice: false });
   const messagesQuery = useSchoolQuery((force) => api.getMessages({ force }), [api], () => api.peekMessages());
-  const sentQuery = useSchoolQuery((force) => api.getSentMessages({ force }), [api], () => api.peekSentMessages());
-  const noticesQuery = useSchoolQuery((force) => api.getAnnouncements({ force }), [api], () => api.peekAnnouncements());
+  const sentQuery = useSchoolQuery(
+    (force) => api.getSentMessages({ force }),
+    [api],
+    () => api.peekSentMessages(),
+    { enabled: opened.sent },
+  );
+  const noticesQuery = useSchoolQuery(
+    (force) => api.getAnnouncements({ force }),
+    [api],
+    () => api.peekAnnouncements(),
+    { enabled: opened.notice },
+  );
   const reloadSent = sentQuery.reload;
+  const sentOpened = opened.sent;
 
   useFocusEffect(
     useCallback(() => {
-      if (tab === 'sent') void reloadSent(false);
-    }, [reloadSent, tab]),
+      if (tab === 'sent' && sentOpened) void reloadSent(false);
+    }, [reloadSent, sentOpened, tab]),
   );
 
-  if (status !== 'ready') return <Redirect href="/" />;
+  const selectTab = useCallback((next: InboxTab) => {
+    setTab(next);
+    setOpened((previous) => (previous[next] ? previous : { ...previous, [next]: true }));
+  }, []);
 
   const query = tab === 'inbox' ? messagesQuery : tab === 'sent' ? sentQuery : noticesQuery;
   const copy = TAB_COPY[tab];
-  const items = sortNewest(query.data ?? [])
-    .map((item) => ({
-      ...item,
-      read: isItemRead(item.id, item.read),
-    }))
-    .filter((item) => {
-      const hidden = hideStatus(item.id);
-      if (hidden === 'deleted') return false;
-      if (hidden === 'archived' && !showArchived) return false;
-      return true;
-    });
+
+  const items = useMemo(
+    () =>
+      sortNewest(query.data ?? []).flatMap((item) => {
+        const hidden = hideStatus(item.id);
+        if (hidden === 'deleted') return [];
+        if (hidden === 'archived' && !showArchived) return [];
+        const read = isItemRead(item.id, item.read);
+        // Keep the same object when nothing changed so memoized rows skip re-rendering.
+        return [read === item.read ? item : { ...item, read }];
+      }),
+    [hideStatus, isItemRead, query.data, showArchived],
+  );
+
+  const toggleRead = useCallback((id: string, read: boolean) => setItemRead(id, !read), [setItemRead]);
+  const renderItem = useCallback(
+    ({ item }: { item: SchoolMessage }) => (
+      <SwipeableMessage
+        message={item}
+        archived={hideStatus(item.id) === 'archived'}
+        onToggleRead={toggleRead}
+        onHide={hideItem}
+      />
+    ),
+    [hideItem, hideStatus, toggleRead],
+  );
+
+  if (status !== 'ready') return <Redirect href="/" />;
 
   return (
     <View style={[styles.flex, { backgroundColor: theme.background }]}>
       {isDemo ? <DemoBanner /> : null}
       <View style={[styles.switcher, { backgroundColor: theme.card, borderColor: theme.line }]}>
-        <TabChip label="Odebrane" active={tab === 'inbox'} onPress={() => setTab('inbox')} />
-        <TabChip label="Wysłane" active={tab === 'sent'} onPress={() => setTab('sent')} />
-        <TabChip label="Ogłoszenia" active={tab === 'notice'} onPress={() => setTab('notice')} />
+        <TabChip label="Odebrane" tab="inbox" active={tab === 'inbox'} onSelect={selectTab} />
+        <TabChip label="Wysłane" tab="sent" active={tab === 'sent'} onSelect={selectTab} />
+        <TabChip label="Ogłoszenia" tab="notice" active={tab === 'notice'} onSelect={selectTab} />
       </View>
       <FlatList
+        testID="messages-list"
         data={items}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyOf}
+        renderItem={renderItem}
         contentContainerStyle={listContentStyle({ gap: 0 })}
-        extraData={`${showArchived}|${items.map((item) => `${item.id}:${item.read}:${hideStatus(item.id) ?? ''}`).join('|')}`}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshing={query.refreshing}
         onRefresh={() => void query.reload(true)}
+        ListHeaderComponent={
+          query.syncError && items.length > 0 ? (
+            <SyncBanner error={query.syncError} onRetry={() => void query.reload(true)} />
+          ) : null
+        }
         ListEmptyComponent={
           query.loading ? (
             <LoadingState label={copy.loading} />
@@ -98,41 +141,40 @@ export default function MessagesScreen() {
             <ScreenMessage title={copy.emptyTitle} body={copy.emptyBody} />
           )
         }
-        renderItem={({ item }) => (
-          <SwipeableMessage
-            message={item}
-            archived={hideStatus(item.id) === 'archived'}
-            onToggleRead={() => setItemRead(item.id, !item.read)}
-            onHide={(action) => hideItem(item.id, action)}
-          />
-        )}
       />
     </View>
   );
 }
 
-function TabChip({
+function keyOf(item: SchoolMessage): string {
+  return item.id;
+}
+
+const TabChip = memo(function TabChip({
   label,
+  tab,
   active,
-  onPress,
+  onSelect,
 }: {
   label: string;
+  tab: InboxTab;
   active: boolean;
-  onPress: () => void;
+  onSelect: (tab: InboxTab) => void;
 }) {
   const theme = useTheme();
   return (
     <Pressable
-      onPress={onPress}
+      testID={`messages-tab-${tab}`}
+      onPress={() => onSelect(tab)}
       style={[styles.chip, active ? { backgroundColor: theme.tint } : null]}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}>
       <Text style={[styles.chipLabel, { color: active ? '#fff' : theme.text }]}>{label}</Text>
     </Pressable>
   );
-}
+});
 
-function SwipeableMessage({
+const SwipeableMessage = memo(function SwipeableMessage({
   message,
   archived,
   onToggleRead,
@@ -140,8 +182,8 @@ function SwipeableMessage({
 }: {
   message: SchoolMessage;
   archived: boolean;
-  onToggleRead: () => void;
-  onHide: (action: HideStatus) => Promise<void>;
+  onToggleRead: (id: string, read: boolean) => void;
+  onHide: (id: string, action: HideStatus) => Promise<void>;
 }) {
   const swipeRef = useRef<Swipeable>(null);
 
@@ -155,7 +197,7 @@ function SwipeableMessage({
           <Pressable
             onPress={() => {
               swipeRef.current?.close();
-              void onHide('archived');
+              void onHide(message.id, 'archived');
             }}
             style={[styles.action, { backgroundColor: palette.amber }]}
             accessibilityRole="button"
@@ -165,7 +207,7 @@ function SwipeableMessage({
           <Pressable
             onPress={() => {
               swipeRef.current?.close();
-              void onHide('deleted');
+              void onHide(message.id, 'deleted');
             }}
             style={[styles.action, { backgroundColor: palette.red }]}
             accessibilityRole="button"
@@ -177,7 +219,7 @@ function SwipeableMessage({
       <MessageRow message={message} archived={archived} onToggleRead={onToggleRead} />
     </Swipeable>
   );
-}
+});
 
 function MessageRow({
   message,
@@ -186,18 +228,19 @@ function MessageRow({
 }: {
   message: SchoolMessage;
   archived: boolean;
-  onToggleRead: () => void;
+  onToggleRead: (id: string, read: boolean) => void;
 }) {
   const theme = useTheme();
-  const stamped = /[:T ]\d{2}:\d{2}/.test(message.sentAt)
-    ? formatDateTime(message.sentAt)
-    : formatDate(message.sentAt);
+  const stamped = formatSentAt(message.sentAt);
   const aligned = alignMessageFields(message.topic, message.sender);
   const personLabel = message.kind === 'sent' ? `Do: ${aligned.sender}` : aligned.sender;
 
   return (
     <Card style={styles.card}>
-      <Pressable onPress={() => router.push({ pathname: '/message/[id]', params: { id: message.id } })} accessibilityRole="button">
+      <Pressable
+        testID={`message-row-${message.id}`}
+        onPress={() => router.push({ pathname: '/message/[id]', params: { id: message.id } })}
+        accessibilityRole="button">
         <View style={styles.row}>
           {!message.read && message.kind === 'inbox' ? (
             <View style={[styles.dot, { backgroundColor: theme.accent }]} />
@@ -253,7 +296,7 @@ function MessageRow({
         ) : null}
         {message.kind === 'inbox' || message.kind === 'notice' ? (
           <Pressable
-            onPress={onToggleRead}
+            onPress={() => onToggleRead(message.id, message.read)}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={message.read ? 'Oznacz jako nieprzeczytane' : 'Oznacz jako przeczytane'}>

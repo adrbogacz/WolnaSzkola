@@ -88,6 +88,11 @@ export function formatDateTime(value: string): string {
   return `${day}.${month}.${date.getFullYear()} ${hours}:${minutes}`;
 }
 
+/** Date with time when the source has one ("14.10.2026 08:15"), otherwise just the date. */
+export function formatSentAt(value: string): string {
+  return /[:T ]\d{2}:\d{2}/.test(value) ? formatDateTime(value) : formatDate(value);
+}
+
 export function formatDate(value: string): string {
   const date = parseDate(value);
   if (!date) return value;

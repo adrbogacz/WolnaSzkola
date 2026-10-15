@@ -12,6 +12,8 @@ import {
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { palette } from '@/constants/Colors';
+import type { SyncError } from '@/src/hooks/useSchoolQuery';
+import type { ErrorKind } from '@/src/librus/errors';
 
 export function useTheme() {
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
@@ -102,6 +104,31 @@ export function PrimaryButton({
   );
 }
 
+const SYNC_COPY: Partial<Record<ErrorKind, string>> = {
+  offline: 'Brak internetu. Pokazuję zapisane dane.',
+  timeout: 'Librus nie odpowiada. Pokazuję zapisane dane.',
+  server: 'Librus ma przerwę. Pokazuję zapisane dane.',
+  auth: 'Nie udało się odnowić sesji. Pokazuję zapisane dane.',
+};
+
+/** Slim, non-blocking notice shown above cached data when a refresh failed. */
+export function SyncBanner({ error, onRetry }: { error: SyncError; onRetry: () => void }) {
+  const theme = useTheme();
+  return (
+    <View
+      testID="sync-banner"
+      accessibilityRole="alert"
+      style={[styles.sync, { backgroundColor: theme.card, borderColor: palette.amber }]}>
+      <Text style={[styles.syncText, { color: theme.text }]} numberOfLines={2}>
+        {SYNC_COPY[error.kind] ?? `${error.message} Pokazuję zapisane dane.`}
+      </Text>
+      <Pressable onPress={onRetry} hitSlop={8} accessibilityRole="button" testID="sync-retry">
+        <Text style={[styles.syncAction, { color: theme.tint }]}>Odśwież</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export function DemoBanner() {
   return (
     <View style={styles.demo}>
@@ -120,6 +147,18 @@ function gradeColor(value: string): string {
 }
 
 const styles = StyleSheet.create({
+  sync: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  syncText: { flex: 1, fontSize: 13, lineHeight: 18 },
+  syncAction: { fontSize: 13, fontWeight: '700' },
   card: {
     borderRadius: 18,
     borderWidth: 1,
