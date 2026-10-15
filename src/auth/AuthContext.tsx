@@ -63,6 +63,7 @@ type SchoolApi = {
   getAnnouncements: (options?: FetchOptions) => Promise<SchoolMessage[]>;
   peekAnnouncements: () => Promise<SchoolMessage[] | null>;
   getMessage: (id: string, options?: FetchOptions) => Promise<SchoolMessage>;
+  peekMessage: (id: string) => Promise<SchoolMessage | null>;
   markServerRead: (id: string) => Promise<void>;
   hideOnServer: (id: string, action: HideStatus) => Promise<void>;
   listReceivers: (options?: FetchOptions) => Promise<SchoolReceiver[]>;
@@ -137,6 +138,7 @@ const demoApi: SchoolApi = {
     if (!found) throw new KlasowaError('Nie znaleziono wiadomości.');
     return found;
   },
+  peekMessage: async () => null,
   markServerRead: async () => undefined,
   hideOnServer: async () => undefined,
   listReceivers: async () => DEMO_RECEIVERS,
@@ -446,6 +448,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       getAnnouncements: (options) => client.getAnnouncements(options),
       peekAnnouncements: () => client.peekAnnouncements(),
       getMessage: (id, options) => client.getMessage(id, options),
+      peekMessage: (id) => client.peekMessage(id),
       markServerRead: (id) => client.markServerRead(id),
       hideOnServer: (id, action) => client.hideOnServer(id, action),
       listReceivers: (options) => client.listReceivers(options),

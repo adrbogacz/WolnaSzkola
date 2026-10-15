@@ -32,7 +32,10 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.6.5",
     "@types/react": "~19.2.2",
+    "detox": "^20.51.4",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -41,12 +44,29 @@
     "android:apk": "zsh scripts/build-android-apk.sh",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "npx tsx scripts/test-grades.ts && npx tsx scripts/test-messages.ts && npx tsx scripts/test-http.ts && npx tsx scripts/test-receivers.ts",
-    "postinstall": "node scripts/patch-expo-modules-jsi.js"
+    "test": "node scripts/test-support/run.mjs",
+    "postinstall": "node scripts/patch-expo-modules-jsi.js",
+    "e2e:mock": "node --experimental-strip-types --no-warnings --import ./scripts/test-support/register.mjs e2e/mock-librus.ts",
+    "e2e:metro": "EXPO_PUBLIC_E2E=1 EXPO_PUBLIC_LIBRUS_MOCK_URL=http://localhost:9091 expo start",
+    "e2e:build": "detox build -c android.emu.debug",
+    "e2e": "detox test -c android.emu.debug"
   },
   "private": true,
   "overrides": {
     "decode-uri-component": "0.5.0",
     "uuid": "11.1.1"
-  }
+  },
+  "description": "Darmowa aplikacja dla rodziców. Pokazuje wiadomości ze szkoły, oceny, frekwencję i plan zajęć z dziennika Librus.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adrbogacz/WolnaSzkola.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/adrbogacz/WolnaSzkola/issues"
+  },
+  "homepage": "https://github.com/adrbogacz/WolnaSzkola#readme"
 }

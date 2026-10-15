@@ -179,40 +179,82 @@ export async function clearSession(): Promise<void> {
   await clearSchoolCache();
 }
 
+// Read and hidden flags are not secrets, so they live in one small file per account instead of
+// many SecureStore chunks (slow, and two quick taps used to interleave chunk writes and corrupt the JSON).
 export async function loadReadState(accountId = ''): Promise<Record<string, boolean>> {
-  const raw = await readChunked(scopedKey(READ_STATE, accountId));
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    return parsed as Record<string, boolean>;
-  } catch {
-    return {};
+  const raw = await loadOverlay(READ_STATE, accountId);
+  const parsed = parseObject(raw);
+  const output: Record<string, boolean> = {};
+  for (const [id, value] of Object.entries(parsed)) {
+    if (typeof value === 'boolean') output[id] = value;
   }
+  return output;
 }
 
 export async function saveReadState(state: Record<string, boolean>, accountId = ''): Promise<void> {
-  await writeChunked(scopedKey(READ_STATE, accountId), JSON.stringify(state));
+  await saveOverlay(READ_STATE, accountId, JSON.stringify(state));
 }
 
 export async function loadHideState(accountId = ''): Promise<Record<string, HideStatus>> {
-  const raw = await readChunked(scopedKey(HIDE_STATE, accountId));
+  const raw = await loadOverlay(HIDE_STATE, accountId);
+  const output: Record<string, HideStatus> = {};
+  for (const [id, value] of Object.entries(parseObject(raw))) {
+    if (value === 'archived' || value === 'deleted') output[id] = value;
+  }
+  return output;
+}
+
+export async function saveHideState(state: Record<string, HideStatus>, accountId = ''): Promise<void> {
+  await saveOverlay(HIDE_STATE, accountId, JSON.stringify(state));
+}
+
+function parseObject(raw: string | null): Record<string, unknown> {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    const output: Record<string, HideStatus> = {};
-    for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (value === 'archived' || value === 'deleted') output[id] = value;
-    }
-    return output;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
   } catch {
     return {};
   }
 }
 
-export async function saveHideState(state: Record<string, HideStatus>, accountId = ''): Promise<void> {
-  await writeChunked(scopedKey(HIDE_STATE, accountId), JSON.stringify(state));
+async function loadOverlay(prefix: string, accountId: string): Promise<string | null> {
+  const key = scopedKey(prefix, accountId);
+  const pending = pendingOverlayWrites.get(key);
+  if (pending !== undefined) return pending;
+  const raw = await readStateFile(key);
+  if (raw !== null) return raw;
+
+  // One-time move from the old SecureStore chunks.
+  const legacy = await readChunked(key);
+  if (!legacy) return null;
+  if (Object.keys(parseObject(legacy)).length > 0) {
+    await saveOverlay(prefix, accountId, legacy);
+  }
+  await clearChunked(key);
+  return legacy;
+}
+
+const pendingOverlayWrites = new Map<string, string>();
+const runningOverlayWrites = new Map<string, Promise<void>>();
+
+/** Serialized per key, latest value wins: rapid toggles never interleave or land out of order. */
+function saveOverlay(prefix: string, accountId: string, raw: string): Promise<void> {
+  const key = scopedKey(prefix, accountId);
+  pendingOverlayWrites.set(key, raw);
+  const running = runningOverlayWrites.get(key);
+  if (running) return running;
+  const task = (async () => {
+    while (pendingOverlayWrites.has(key)) {
+      const next = pendingOverlayWrites.get(key) ?? '';
+      await writeStateFile(key, next);
+      if (pendingOverlayWrites.get(key) === next) pendingOverlayWrites.delete(key);
+    }
+  })().finally(() => {
+    runningOverlayWrites.delete(key);
+  });
+  runningOverlayWrites.set(key, task);
+  return task;
 }
 
 export async function loadAppSettings(): Promise<AppSettings> {
@@ -311,12 +353,11 @@ async function readSecretChunked(prefix: string): Promise<string> {
   return (await readSecret(prefix)) ?? '';
 }
 
-async function writeChunked(prefix: string, raw: string): Promise<void> {
-  const chunks = Math.max(1, Math.ceil(raw.length / READ_CHUNK));
-  await write(`${prefix}.n`, String(chunks));
-  for (let index = 0; index < chunks; index += 1) {
-    await write(`${prefix}.${index}`, raw.slice(index * READ_CHUNK, (index + 1) * READ_CHUNK));
-  }
+async function clearChunked(prefix: string): Promise<void> {
+  const count = Number((await read(`${prefix}.n`)) ?? '0');
+  for (let index = 0; index < count; index += 1) await write(`${prefix}.${index}`, null);
+  await write(`${prefix}.n`, null);
+  await write(prefix, null);
 }
 
 async function writeSecretChunked(prefix: string, raw: string): Promise<void> {
@@ -394,6 +435,36 @@ export async function clearSchoolCache(): Promise<void> {
     if (dir.exists) dir.delete();
   } catch {
     // Ignore missing files.
+  }
+}
+
+const STATE_DIR = 'wolnaszkola-state';
+
+async function readStateFile(key: string): Promise<string | null> {
+  if (Platform.OS === 'web') return globalThis.localStorage?.getItem(`${STATE_DIR}.${key}`) ?? null;
+  try {
+    const { Directory, File, Paths } = await import('expo-file-system');
+    const file = new File(new Directory(Paths.document, STATE_DIR), `${sanitizeCachePart(key)}.json`);
+    return file.exists ? file.textSync() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeStateFile(key: string, raw: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    globalThis.localStorage?.setItem(`${STATE_DIR}.${key}`, raw);
+    return;
+  }
+  try {
+    const { Directory, File, Paths } = await import('expo-file-system');
+    const dir = new Directory(Paths.document, STATE_DIR);
+    if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+    const file = new File(dir, `${sanitizeCachePart(key)}.json`);
+    if (!file.exists) file.create();
+    file.write(raw);
+  } catch {
+    // Flags fall back to the server's read state on the next load.
   }
 }
 

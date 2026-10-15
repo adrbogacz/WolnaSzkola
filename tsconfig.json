@@ -6,7 +6,12 @@
       "@/*": [
         "./*"
       ]
-    }
+    },
+    "types": [
+      "@types/node",
+      "@types/jest",
+      "jest"
+    ]
   },
   "include": [
     "**/*.ts",
