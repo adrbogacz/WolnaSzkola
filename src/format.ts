@@ -58,11 +58,11 @@ export function parseDate(value: string): Date | null {
 }
 
 export function sortNewest<T extends { sentAt: string }>(items: T[]): T[] {
-  return [...items].sort((left, right) => {
-    const a = parseDate(left.sentAt)?.getTime() ?? 0;
-    const b = parseDate(right.sentAt)?.getTime() ?? 0;
-    return b - a;
-  });
+  // Parse each date once, not on every comparison.
+  return items
+    .map((item) => ({ item, time: parseDate(item.sentAt)?.getTime() ?? 0 }))
+    .sort((left, right) => right.time - left.time)
+    .map(({ item }) => item);
 }
 
 export function formatDayHeading(iso: string): string {
@@ -274,10 +274,22 @@ function polishMojibakeFallback(text: string): string {
     .replace(/Ät/g, 'ąt');
 }
 
+// Signs that a strict UTF-8 decode still needs the repair pipeline below.
+const NEEDS_REPAIR = /[ÄÅÃÂ³\uFFFD\u0080-\u009F]/;
+
 export function decodeBytesAsText(bytes: Uint8Array): string {
-  const utf8 = new TextDecoder('utf-8').decode(bytes);
-  let latin1 = '';
-  for (let i = 0; i < bytes.length; i += 1) latin1 += String.fromCharCode(bytes[i] ?? 0);
+  // Fast path for the common case (clean UTF-8): every Librus response goes through here, and the
+  // repair pipeline below costs ~50x a plain decode on a typical inbox.
+  let strict: string | null = null;
+  try {
+    strict = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    strict = null;
+  }
+  if (strict !== null && !NEEDS_REPAIR.test(strict)) return strict;
+
+  const utf8 = strict ?? new TextDecoder('utf-8').decode(bytes);
+  const latin1 = latin1FromBytes(bytes);
   const repairedUtf8 = repairMojibake(utf8);
   const repairedLatin1 = repairMojibake(latin1);
   const options = [utf8, repairedUtf8, repairedLatin1];
@@ -291,6 +303,14 @@ export function decodeBytesAsText(bytes: Uint8Array): string {
     }
   }
   return best;
+}
+
+function latin1FromBytes(bytes: Uint8Array): string {
+  const parts: string[] = [];
+  for (let start = 0; start < bytes.length; start += 8192) {
+    parts.push(String.fromCharCode(...bytes.subarray(start, start + 8192)));
+  }
+  return parts.join('');
 }
 
 /** Numeric entities, then named Polish ones, then `&amp;` — two passes for double encoding. */

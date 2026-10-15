@@ -169,15 +169,17 @@ export function parseMessage(value: unknown): SchoolMessage {
   const raw = asRecord(unwrapMessagePayload(value));
   const sender = asRecord(raw.Sender ?? raw.sender ?? raw.from);
   const id = asString(raw.messageId ?? raw.message_id ?? raw.Id ?? raw.id);
-  const body = decodeMessageBody(
-    firstText(
-      raw.Body,
-      raw.body,
-      raw.Message,
-      raw.message,
-      raw.content,
-      raw.originalMessage,
-      raw.Content,
+  const body = capBody(
+    decodeMessageBody(
+      firstText(
+        raw.Body,
+        raw.body,
+        raw.Message,
+        raw.message,
+        raw.content,
+        raw.originalMessage,
+        raw.Content,
+      ),
     ),
   );
   const senderName =
@@ -205,9 +207,19 @@ export function parseMessage(value: unknown): SchoolMessage {
   };
 }
 
+const MAX_BODY_CHARS = 50_000;
+const TRUNCATED_NOTE = '\n\n[…] Wiadomość jest dłuższa. Pełną treść otworzysz na synergia.librus.pl.';
+
+/** Very long bodies are cut for rendering speed, but never silently. */
+function capBody(text: string): string {
+  if (text.length <= MAX_BODY_CHARS) return text;
+  return text.slice(0, MAX_BODY_CHARS).trimEnd() + TRUNCATED_NOTE;
+}
+
 function firstText(...values: unknown[]): string {
   for (const value of values) {
-    const text = asString(value, '', 50_000);
+    // Raw limit leaves room for base64 (4/3 larger) and markup before capBody trims the text.
+    const text = asString(value, '', 4 * MAX_BODY_CHARS);
     if (text.trim()) return text;
   }
   return '';
