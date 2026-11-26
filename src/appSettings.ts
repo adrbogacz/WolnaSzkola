@@ -16,12 +16,22 @@ export const REGULAMIN_WARNING =
 
 export type HideStatus = 'archived' | 'deleted';
 
+export type ThemeMode = 'system' | 'light' | 'dark';
+
+export const THEME_MODE_OPTIONS: readonly { label: string; mode: ThemeMode }[] = [
+  { label: 'Jak w telefonie', mode: 'system' },
+  { label: 'Jasny', mode: 'light' },
+  { label: 'Ciemny', mode: 'dark' },
+];
+
 export type AppSettings = {
   showArchived: boolean;
   syncIntervalMinutes: number;
+  themeMode: ThemeMode;
 };
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   showArchived: false,
   syncIntervalMinutes: 0,
+  themeMode: 'system',
 };

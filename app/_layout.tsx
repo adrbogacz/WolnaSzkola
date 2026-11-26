@@ -3,6 +3,7 @@ import '@/src/background/notifications';
 
 import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -30,6 +31,11 @@ export default function RootLayout() {
 function RootNavigation() {
   const { status } = useAuth();
   const theme = useTheme();
+
+  // Root window colour: no white flash behind screens and keyboard in dark mode.
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(theme.background).catch(() => undefined);
+  }, [theme.background]);
 
   useEffect(() => {
     return subscribeNotificationNavigation(() => {

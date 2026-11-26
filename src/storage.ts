@@ -266,14 +266,23 @@ export async function loadAppSettings(): Promise<AppSettings> {
     return {
       showArchived: Boolean(parsed.showArchived),
       syncIntervalMinutes: Number.isFinite(minutes) && minutes >= 0 ? minutes : 0,
+      themeMode: parsed.themeMode === 'light' || parsed.themeMode === 'dark' ? parsed.themeMode : 'system',
     };
   } catch {
     return { ...DEFAULT_APP_SETTINGS };
   }
 }
 
-export async function saveAppSettings(settings: AppSettings): Promise<void> {
-  await write(SETTINGS, JSON.stringify(settings));
+let settingsWrite: Promise<void> = Promise.resolve();
+
+/** Saves only the given fields; the rest keep their stored values. Writes run one at a time. */
+export function saveAppSettings(changes: Partial<AppSettings>): Promise<void> {
+  const task = settingsWrite.then(async () => {
+    const current = await loadAppSettings();
+    await write(SETTINGS, JSON.stringify({ ...current, ...changes }));
+  });
+  settingsWrite = task.catch(() => undefined);
+  return task;
 }
 
 export async function loadSeenMessageIds(accountId = ''): Promise<string[]> {

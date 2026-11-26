@@ -53,7 +53,7 @@ export function ScreenMessage({
       <Text style={[styles.messageBody, { color: theme.muted }]}>{body}</Text>
       {actionLabel && onAction ? (
         <Pressable onPress={onAction} style={[styles.action, { backgroundColor: theme.tint }]}>
-          <Text style={styles.actionLabel}>{actionLabel}</Text>
+          <Text style={[styles.actionLabel, { color: theme.onTint }]}>{actionLabel}</Text>
         </Pressable>
       ) : null}
     </View>
@@ -102,7 +102,7 @@ export function PrimaryButton({
         styles.primary,
         { backgroundColor: theme.tint, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
       ]}>
-      <Text style={styles.primaryLabel}>{label}</Text>
+      <Text style={[styles.primaryLabel, { color: theme.onTint }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -121,7 +121,7 @@ export function SyncBanner({ error, onRetry }: { error: SyncError; onRetry: () =
     <View
       testID="sync-banner"
       accessibilityRole="alert"
-      style={[styles.sync, { backgroundColor: theme.card, borderColor: palette.amber }]}>
+      style={[styles.sync, { backgroundColor: theme.card, borderColor: theme.warning }]}>
       <Text style={[styles.syncText, { color: theme.text }]} numberOfLines={2}>
         {SYNC_COPY[error.kind] ?? `${error.message} Pokazuję zapisane dane.`}
       </Text>
@@ -133,9 +133,10 @@ export function SyncBanner({ error, onRetry }: { error: SyncError; onRetry: () =
 }
 
 export function DemoBanner() {
+  const theme = useTheme();
   return (
-    <View style={styles.demo}>
-      <Text style={styles.demoText}>Przykładowe dane — to nie jest dziennik Twojego dziecka</Text>
+    <View style={[styles.demo, { backgroundColor: theme.demoBackground }]}>
+      <Text style={[styles.demoText, { color: theme.demoText }]}>Przykładowe dane — to nie jest dziennik Twojego dziecka</Text>
     </View>
   );
 }
@@ -190,7 +191,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   actionLabel: {
-    color: '#fff',
     fontWeight: '700',
   },
   badge: {
@@ -212,17 +212,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryLabel: {
-    color: '#fff',
     fontSize: 17,
     fontWeight: '700',
   },
   demo: {
-    backgroundColor: '#F6E1C8',
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
   demoText: {
-    color: '#7A4A18',
     fontSize: 13,
     textAlign: 'center',
     fontWeight: '600',

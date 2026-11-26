@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { Redirect } from 'expo-router';
 
+import { textOn } from '@/constants/Colors';
 import { useAuth } from '@/src/auth/AuthContext';
 import { formatDate } from '@/src/format';
 import { useSchoolQuery } from '@/src/hooks/useSchoolQuery';
@@ -44,7 +45,7 @@ export default function AttendanceScreen() {
                 style={[styles.filter, { backgroundColor: hidePresence ? theme.tint : theme.card, borderColor: theme.line }]}
                 accessibilityRole="button"
                 accessibilityState={{ selected: hidePresence }}>
-                <Text style={[styles.filterLabel, { color: hidePresence ? '#fff' : theme.text }]}>
+                <Text style={[styles.filterLabel, { color: hidePresence ? theme.onTint : theme.text }]}>
                   {hidePresence ? 'Pokaż obecności' : 'Ukryj obecności'}
                 </Text>
               </Pressable>
@@ -94,7 +95,7 @@ function AttendanceRow({ item }: { item: SchoolAttendance }) {
   return (
     <Card style={styles.row}>
       <View style={[styles.mark, { backgroundColor: item.color }]}>
-        <Text style={styles.markText}>{item.typeShort}</Text>
+        <Text style={[styles.markText, { color: textOn(item.color) }]}>{item.typeShort}</Text>
       </View>
       <View style={styles.body}>
         <Text style={[styles.type, { color: theme.text }]}>{item.typeName}</Text>
@@ -136,7 +137,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 8,
   },
-  markText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  markText: { fontWeight: '800', fontSize: 14 },
   body: { flex: 1 },
   type: { fontSize: 16, fontWeight: '700' },
   meta: { marginTop: 4, fontSize: 13 },

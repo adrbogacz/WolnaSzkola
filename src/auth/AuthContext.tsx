@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { Alert, AppState } from 'react-native';
 
-import { DEFAULT_APP_SETTINGS, type HideStatus } from '@/src/appSettings';
+import { DEFAULT_APP_SETTINGS, type HideStatus, type ThemeMode } from '@/src/appSettings';
 import { ensureNotificationPermission } from '@/src/background/notifications';
 import { applySyncInterval } from '@/src/background/syncTask';
 import { LibrusClient } from '@/src/librus/client';
@@ -24,6 +24,7 @@ import {
   demoTimetable,
 } from '@/src/librus/demo';
 import { KlasowaError } from '@/src/librus/errors';
+import { applyThemeMode } from '@/src/themeMode';
 import { CORE_RECIPIENT_TYPES } from '@/src/librus/scrape';
 import type {
   ChildAccount,
@@ -114,6 +115,8 @@ type AuthContextValue = {
   setShowArchived: (value: boolean) => void;
   syncIntervalMinutes: number;
   setSyncIntervalMinutes: (minutes: number) => Promise<void>;
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
   clearLocalAppData: () => Promise<void>;
 };
 
@@ -172,6 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [hideState, setHideState] = useState<Record<string, HideStatus>>({});
   const [showArchived, setShowArchivedState] = useState(DEFAULT_APP_SETTINGS.showArchived);
   const [syncIntervalMinutes, setSyncIntervalState] = useState(DEFAULT_APP_SETTINGS.syncIntervalMinutes);
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(DEFAULT_APP_SETTINGS.themeMode);
 
   const rememberAccounts = useCallback(async () => {
     const stored = await loadAccounts();
@@ -214,6 +218,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setShowArchivedState(settings.showArchived);
         setSyncIntervalState(settings.syncIntervalMinutes);
+        setThemeModeState(settings.themeMode);
+        applyThemeMode(settings.themeMode);
 
         const storedAccounts = await rememberAccounts();
         if (!stored) {
@@ -410,8 +416,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setShowArchived = useCallback((value: boolean) => {
     setShowArchivedState(value);
-    void saveAppSettings({ showArchived: value, syncIntervalMinutes });
-  }, [syncIntervalMinutes]);
+    void saveAppSettings({ showArchived: value });
+  }, []);
+
+  const setThemeMode = useCallback((mode: ThemeMode) => {
+    setThemeModeState(mode);
+    applyThemeMode(mode);
+    void saveAppSettings({ themeMode: mode });
+  }, []);
 
   const setSyncIntervalMinutes = useCallback(async (minutes: number) => {
     if (minutes > 0) {
@@ -424,13 +436,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     setSyncIntervalState(minutes);
-    await saveAppSettings({ showArchived, syncIntervalMinutes: minutes });
+    await saveAppSettings({ syncIntervalMinutes: minutes });
     if (status === 'ready' && !isDemo) {
       await applySyncInterval(minutes);
     } else {
       await applySyncInterval(0);
     }
-  }, [isDemo, showArchived, status]);
+  }, [isDemo, status]);
 
   const clearLocalAppData = useCallback(async () => {
     await clearLocalOverlays(accountId ?? '');
@@ -489,6 +501,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setShowArchived,
       syncIntervalMinutes,
       setSyncIntervalMinutes,
+      themeMode,
+      setThemeMode,
       clearLocalAppData,
     }),
     [
@@ -514,6 +528,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setShowArchived,
       syncIntervalMinutes,
       setSyncIntervalMinutes,
+      themeMode,
+      setThemeMode,
       clearLocalAppData,
     ],
   );
