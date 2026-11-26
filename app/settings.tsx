@@ -2,7 +2,7 @@ import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Te
 import Constants from 'expo-constants';
 import { Redirect, router } from 'expo-router';
 
-import { REGULAMIN_WARNING, SUPPORT_EMAIL, SYNC_INTERVAL_OPTIONS } from '@/src/appSettings';
+import { REGULAMIN_WARNING, SUPPORT_EMAIL, SYNC_INTERVAL_OPTIONS, THEME_MODE_OPTIONS } from '@/src/appSettings';
 import { useAuth } from '@/src/auth/AuthContext';
 import { Card, PrimaryButton, useTheme } from '@/src/ui';
 
@@ -25,6 +25,8 @@ export default function SettingsScreen() {
     setShowArchived,
     syncIntervalMinutes,
     setSyncIntervalMinutes,
+    themeMode,
+    setThemeMode,
     clearLocalAppData,
   } = useAuth();
   const theme = useTheme();
@@ -76,6 +78,30 @@ export default function SettingsScreen() {
         <Text style={[styles.rowHint, { color: theme.muted }]}>Wersja {appVersionLabel()}</Text>
       </Card>
 
+      <Text style={[styles.section, { color: theme.muted }]}>Wygląd</Text>
+      <View style={styles.chips}>
+        {THEME_MODE_OPTIONS.map((option) => {
+          const active = themeMode === option.mode;
+          return (
+            <Pressable
+              key={option.mode}
+              testID={`theme-${option.mode}`}
+              onPress={() => setThemeMode(option.mode)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: active ? theme.tint : theme.card,
+                  borderColor: active ? theme.tint : theme.line,
+                },
+              ]}>
+              <Text style={[styles.chipLabel, { color: active ? theme.onTint : theme.text }]}>{option.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       <Text style={[styles.section, { color: theme.muted }]}>Wiadomości</Text>
       <Card style={styles.rowCard}>
         <View style={styles.row}>
@@ -106,13 +132,13 @@ export default function SettingsScreen() {
                   borderColor: active ? theme.tint : theme.line,
                 },
               ]}>
-              <Text style={[styles.chipLabel, { color: active ? '#fff' : theme.text }]}>{option.label}</Text>
+              <Text style={[styles.chipLabel, { color: active ? theme.onTint : theme.text }]}>{option.label}</Text>
             </Pressable>
           );
         })}
       </View>
       {syncIntervalMinutes > 0 && syncIntervalMinutes < 15 ? (
-        <Text style={styles.warning}>{REGULAMIN_WARNING}</Text>
+        <Text style={[styles.warning, { color: theme.danger }]}>{REGULAMIN_WARNING}</Text>
       ) : null}
       <Text style={[styles.note, { color: theme.muted }]}>
         Telefon sam wybiera, kiedy sprawdzić skrzynkę. Może to być później, niż ustawisz.
@@ -171,7 +197,7 @@ export default function SettingsScreen() {
         style={styles.dangerLink}
         accessibilityRole="button"
         accessibilityLabel="Usuń lokalne dane apki">
-        <Text style={styles.dangerText}>Usuń lokalne dane apki</Text>
+        <Text style={[styles.dangerText, { color: theme.danger }]}>Usuń lokalne dane apki</Text>
       </Pressable>
     </ScrollView>
   );
@@ -188,9 +214,9 @@ const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   chipLabel: { fontSize: 14, fontWeight: '700' },
-  warning: { color: '#B42318', fontSize: 14, lineHeight: 20, fontWeight: '600' },
+  warning: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
   note: { fontSize: 13, lineHeight: 18 },
   mailLink: { fontSize: 16, fontWeight: '700', paddingVertical: 4 },
   dangerLink: { alignItems: 'center', paddingVertical: 12 },
-  dangerText: { color: '#B42318', fontSize: 15, fontWeight: '700' },
+  dangerText: { fontSize: 15, fontWeight: '700' },
 });

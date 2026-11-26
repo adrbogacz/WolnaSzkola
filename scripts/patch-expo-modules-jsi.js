@@ -24,6 +24,8 @@ patchFile('apple/Sources/ExpoModulesJSI-Cxx/include/RuntimeScheduler.h', (source
 // the pointers never outlive the C callback.
 patchFile('apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift', (source) => {
   if (source.includes('Xcode26UncheckedSendable')) return source;
+  // expo-modules-jsi 57.1+ boxes these pointers in its own UncheckedSendable: nothing left to patch.
+  if (source.includes('UncheckedSendable(resultPtr)')) return source;
 
   let next = source.replace(
     '      nonisolated(unsafe) let resultPtr = resultPtr\n\n      return withGuaranteedContext(context) { (context: HostObjectContext, runtime) in\n        return JavaScriptActor.assumeIsolated {\n          return forwardingSwiftErrorsToJS(runtime: runtime) {\n            try context.get(propertyName).writeJSIValue(to: resultPtr)',

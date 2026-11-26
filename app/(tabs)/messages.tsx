@@ -169,7 +169,7 @@ const TabChip = memo(function TabChip({
       style={[styles.chip, active ? { backgroundColor: theme.tint } : null]}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}>
-      <Text style={[styles.chipLabel, { color: active ? '#fff' : theme.text }]}>{label}</Text>
+      <Text style={[styles.chipLabel, { color: active ? theme.onTint : theme.text }]}>{label}</Text>
     </Pressable>
   );
 });

@@ -41,9 +41,42 @@ export function combineGrades(options: {
   for (const grade of options.details ?? []) ingest(grade);
   for (const grade of options.api ?? []) ingest(grade);
 
-  return [...byKey.values()]
+  return foldPlaceholderSubjects([...byKey.values()])
     .map((grade) => ({ ...grade, comment: tidyGradeComment(grade) }))
     .filter((grade) => !isJunkGrade(grade));
+}
+
+const PLACEHOLDER_SUBJECT = /^(przedmiot|ocena)?$/i;
+
+/**
+ * Synergia's summary tables have no subject column, so the same grade can arrive once under its
+ * subject and once under the "Przedmiot" placeholder. Fold the placeholder copy into the graded
+ * item with the same date, mark and teacher; keep it only when there is no such item.
+ */
+function foldPlaceholderSubjects(grades: SchoolGrade[]): SchoolGrade[] {
+  const named = grades.filter((grade) => !PLACEHOLDER_SUBJECT.test(grade.subject.trim()));
+  const result = [...named];
+  const sameMark = (a: string, b: string) => a.replace(/\s+/g, '') === b.replace(/\s+/g, '');
+  const sameTeacher = (a: string, b: string) =>
+    !a || !b || nameTokens(a).every((token) => nameTokens(b).includes(token));
+  for (const grade of grades) {
+    if (!PLACEHOLDER_SUBJECT.test(grade.subject.trim())) continue;
+    const index = result.findIndex(
+      (candidate) =>
+        !PLACEHOLDER_SUBJECT.test(candidate.subject.trim()) &&
+        Boolean(grade.date) &&
+        candidate.date === grade.date &&
+        sameMark(candidate.value, grade.value) &&
+        sameTeacher(candidate.teacher, grade.teacher),
+    );
+    if (index >= 0) result[index] = fuseGrades(result[index]!, grade);
+    else result.push(grade);
+  }
+  return result;
+}
+
+function nameTokens(value: string): string[] {
+  return value.toLowerCase().split(/[\s,.-]+/).filter((token) => token.length > 1);
 }
 
 export function gradeNumericId(id: string): string {

@@ -278,7 +278,7 @@ export default function ComposeScreen() {
             ))}
           </ScrollView>
         ) : null}
-        {groupError ? <Text style={styles.error}>{groupError}</Text> : null}
+        {groupError ? <Text style={[styles.error, { color: theme.danger }]}>{groupError}</Text> : null}
         {groupsQuery.loading && catalog.length === 0 ? (
           <LoadingState label="Pobieram grupy odbiorców…" />
         ) : groupsQuery.error && catalog.length === 0 ? (
@@ -393,7 +393,7 @@ export default function ComposeScreen() {
           ]}
         />
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? <Text style={[styles.error, { color: theme.danger }]}>{error}</Text> : null}
         <PrimaryButton
           label={busy ? 'Wysyłam…' : params.replyToId ? 'Wyślij odpowiedź' : 'Wyślij'}
           onPress={() => void onSend()}
@@ -486,7 +486,7 @@ function GroupFilterChip({
           borderColor: active ? theme.tint : theme.line,
         },
       ]}>
-      <Text style={[styles.filterChipLabel, { color: active ? '#fff' : theme.text }]}>{label}</Text>
+      <Text style={[styles.filterChipLabel, { color: active ? theme.onTint : theme.text }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -536,5 +536,5 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   body: { minHeight: 160 },
-  error: { color: '#B42318', marginBottom: 12, fontSize: 15, lineHeight: 20 },
+  error: { marginBottom: 12, fontSize: 15, lineHeight: 20 },
 });

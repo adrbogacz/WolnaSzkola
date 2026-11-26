@@ -4,3 +4,6 @@ export const Platform = {
     return options.ios ?? options.default;
   },
 };
+
+/** Tests set `currentState` to check foreground vs background behaviour. */
+export const AppState = { currentState: 'background' as 'active' | 'background' | 'inactive' };

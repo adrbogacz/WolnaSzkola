@@ -7,6 +7,7 @@ const shims = {
   'react-native': 'react-native.ts',
   'expo-secure-store': 'expo-secure-store.ts',
   'expo-file-system': 'expo-file-system.ts',
+  'expo-notifications': 'expo-notifications.ts',
 };
 
 function withExtension(candidate) {

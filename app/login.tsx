@@ -143,7 +143,7 @@ Login do Librus Synergia.
             </Pressable>
           </View>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? <Text style={[styles.error, { color: theme.danger }]}>{error}</Text> : null}
 
           {debug ? (
             <View style={[styles.debugBox, { borderColor: theme.line, backgroundColor: theme.card }]}>
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   passwordRow: { position: 'relative' },
   passwordInput: { paddingRight: 72 },
   eye: { position: 'absolute', right: 16, top: 16 },
-  error: { color: '#B42318', fontSize: 15, marginBottom: 16, lineHeight: 20 },
+  error: { fontSize: 15, marginBottom: 16, lineHeight: 20 },
   debugBox: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16 },
   debugTitle: { fontSize: 14, fontWeight: '700', marginBottom: 6 },
   debugHint: { fontSize: 12, lineHeight: 16, marginBottom: 8 },
