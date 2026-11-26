@@ -1,13 +1,19 @@
 // Local stand-in for api/synergia/wiadomosci.librus.pl used by the Detox suite.
 // The e2e app build sets EXPO_PUBLIC_LIBRUS_MOCK_URL so every Librus request lands here as
-// /<host>/<path>. Tests switch behaviour with: POST /__scenario {"name": "normal" | "librus-down"}.
+// /<host>/<path>. Tests switch behaviour with: POST /__scenario {"name": <Scenario>}:
+// - normal: everything answers;
+// - librus-down: the wiadomosci API returns 503;
+// - session-expired: the next inbox API call returns the login page (200 HTML), later ones are normal;
+// - session-broken: every wiadomosci API call returns the login page.
 import http from 'node:http';
 
-import { inboxFixture, messageDetailFixture } from '../scripts/test-support/librus-fixtures';
+import { inboxFixture, inboxHtmlFixture, LOGIN_PAGE, messageDetailFixture } from '../scripts/test-support/librus-fixtures';
 
 const PORT = Number(process.env.MOCK_PORT ?? 9091);
 const DETAIL_DELAY_MS = 1500; // long enough for the test to see the placeholder before the body
-let scenario: 'normal' | 'librus-down' = 'normal';
+const SCENARIOS = ['normal', 'librus-down', 'session-expired', 'session-broken'] as const;
+type Scenario = (typeof SCENARIOS)[number];
+let scenario: Scenario = 'normal';
 
 function send(res: http.ServerResponse, status: number, body: unknown, type = 'application/json') {
   res.writeHead(status, { 'content-type': `${type}; charset=utf-8` });
@@ -27,13 +33,20 @@ const server = http.createServer(async (req, res) => {
   const path = url.pathname;
 
   if (path === '/__scenario' && req.method === 'POST') {
-    const { name } = JSON.parse((await readBody(req)) || '{}') as { name?: typeof scenario };
-    scenario = name === 'librus-down' ? 'librus-down' : 'normal';
+    const { name } = JSON.parse((await readBody(req)) || '{}') as { name?: Scenario };
+    scenario = name && SCENARIOS.includes(name) ? name : 'normal';
     return send(res, 200, { scenario });
   }
 
   if (scenario === 'librus-down' && path.startsWith('/wiadomosci/api/')) {
     return send(res, 503, '<h1>Przerwa techniczna</h1>', 'text/html');
+  }
+  if (scenario === 'session-broken' && path.startsWith('/wiadomosci/api/')) {
+    return send(res, 200, LOGIN_PAGE, 'text/html');
+  }
+  if (scenario === 'session-expired' && path === '/wiadomosci/api/inbox/messages') {
+    scenario = 'normal';
+    return send(res, 200, LOGIN_PAGE, 'text/html');
   }
 
   // Login: portal handshake, OAuth form, then the gateway session.
@@ -50,6 +63,11 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, messageDetailFixture(detail[1]));
   }
   if (/^\/wiadomosci\/api\/(outbox|sent)\/messages$/.test(path)) return send(res, 200, { data: [] });
+
+  // Old synergia HTML inbox, the last-resort fallback.
+  if (path === '/synergia/wiadomosci' || path === '/synergia/wiadomosci/5') {
+    return send(res, 200, inboxHtmlFixture(), 'text/html');
+  }
 
   // Everything else (refreshToken, TokenInfo, wiadomosci2/3 visits) just needs a 200.
   if (path.startsWith('/synergia/') && !path.includes('/gateway/')) return send(res, 200, '<html></html>', 'text/html');

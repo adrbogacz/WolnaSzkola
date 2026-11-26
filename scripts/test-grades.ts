@@ -407,6 +407,28 @@ const repeated = tidyGradeComment({
 });
 assert('skill lines that restate the grade are not shown again', !repeated, repeated);
 
+// A summary table without a subject column gives the same grade under the "Przedmiot" placeholder.
+const placeholderDupes = combineGrades({
+  html: [
+    grade({ id: 'html-table-16', value: '6', subject: 'Przedmiot', category: 'Praca na lekcji', date: '2026-11-16', teacher: 'Nowak-Lis Ewa' }),
+    grade({ id: 'html-table-17', value: '6-', subject: 'Przedmiot', category: 'Kartkówka', date: '2026-10-13', teacher: 'Nowak-Lis Ewa' }),
+  ],
+  api: [
+    grade({ id: '1133722', value: '6', subject: 'Język angielski', category: 'Praca na lekcji', date: '2026-11-16', teacher: 'Nowak-Lis Ewa' }),
+    grade({ id: '1133723', value: '6-', subject: 'Język angielski', category: 'Kartkówka', date: '2026-10-13', teacher: 'Nowak-Lis Ewa' }),
+    grade({ id: '1133724', value: '6', subject: 'Matematyka', category: 'Test', date: '2026-11-16', teacher: 'Nowak Ewa' }),
+  ],
+});
+const english = placeholderDupes.filter((item) => item.subject === 'Język angielski');
+assert('placeholder copy of a graded item is folded into its real subject', !placeholderDupes.some((item) => item.subject === 'Przedmiot'), placeholderDupes);
+assert('real-subject grades are all kept', english.length === 2 && placeholderDupes.length === 3, placeholderDupes);
+assert('same date and mark in another subject is not merged', placeholderDupes.some((item) => item.subject === 'Matematyka'), placeholderDupes);
+
+const onlyPlaceholder = combineGrades({
+  html: [grade({ id: 'html-table-1', value: '4', subject: 'Przedmiot', category: 'Dyktando', date: '2026-11-20', teacher: 'Nowak Ewa' })],
+});
+assert('a grade known only under the placeholder is still shown', onlyPlaceholder.length === 1, onlyPlaceholder);
+
 if (failed > 0) {
   console.error(`\n${failed} check(s) failed`);
   process.exit(1);

@@ -40,7 +40,10 @@ export function alignMessageFields(topic: string, sender: string): { topic: stri
     nextSender = '';
   }
 
-  if (nextTopic && nextSender && looksLikePersonName(nextTopic) && !looksLikePersonName(nextSender)) {
+  // Only swap on strong evidence: a role marker such as "[Nauczyciel]" in the topic slot. A short
+  // subject like "Zgoda na wyjście" reads like a name, and a sender like "Wójcik Adam (Przedstawiciel
+  // Klasowej Rady Rodziców)" contains "Rady", so word guessing alone swapped correct rows.
+  if (nextTopic && nextSender && hasRoleMarker(nextTopic) && !hasRoleMarker(nextSender)) {
     const swap = nextTopic;
     nextTopic = nextSender;
     nextSender = tidySenderLabel(swap);
@@ -70,10 +73,21 @@ export function composeReplyParams(message: SchoolMessage): {
   };
 }
 
+const ROLE_WORDS =
+  /(nauczyciel\w*|psycholog\w*|pedagog\w*|logoped\w*|wychowawc\w*|dyrektor\w*|sekretariat\w*|przedstawiciel\w*|rodzic\w*|opiekun\w*|administrator\w*)/i;
+
+/** "[Nauczyciel]", "(Przedstawiciel Klasowej Rady Rodziców)": how Librus labels a person's role. */
+export function hasRoleMarker(value: string): boolean {
+  const text = value.trim();
+  if (/\[[^\]]+\]\s*$/.test(text)) return true;
+  const parenthesis = text.match(/\(([^)]+)\)\s*$/)?.[1];
+  return Boolean(parenthesis && ROLE_WORDS.test(parenthesis));
+}
+
 export function looksLikePersonName(value: string): boolean {
   const text = value.trim();
   if (!text) return false;
-  if (/\[[^\]]+\]/.test(text)) return true;
+  if (/\[[^\]]+\]/.test(text) || hasRoleMarker(text)) return true;
   if (/\b(nauczyciel(?:ka)?|psycholog|pedagog|logopeda|wychowawc\w*)\b/i.test(text)) return true;
   if (
     /\b(zajęcia|ogłoszenie|spotkani\w*|zebrani\w*|sprawdzian\w*|wycieczk\w*|informacj\w*|przypomnien\w*|proszę|prosze|organizac\w*|kontakt\w*|rad\w*|delegat\w*|basen\w*|legitymac\w*|frekwenc\w*)\b/i.test(

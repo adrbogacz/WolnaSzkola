@@ -1,7 +1,7 @@
 // `npm test`: runs each scripts/test-*.ts with Node's type stripping (Node >= 22.6), no tsx download.
 import { spawnSync } from 'node:child_process';
 
-const suites = ['test-grades', 'test-messages', 'test-http', 'test-receivers', 'test-messaging-client'];
+const suites = ['test-grades', 'test-messages', 'test-http', 'test-receivers', 'test-messaging-client', 'test-notifications'];
 for (const suite of suites) {
   console.log(`\n# ${suite}`);
   const result = spawnSync(

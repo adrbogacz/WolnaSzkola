@@ -11,6 +11,10 @@ using the same fixtures as `scripts/test-messaging-client.ts`. The app is pointe
    (Polish characters intact), the header does not move when the body arrives, and no JS frame
    during the first 3 s takes longer than 100 ms (`FrameProbe`, shown only when `EXPO_PUBLIC_E2E=1`);
 3. when Librus returns 503 on refresh, the cached list stays and `sync-banner` appears.
+4. when the wiadomosci session expires (the API answers with a login page), the app logs back in
+   and keeps the API inbox (`w-*` rows), never switching to the synergia HTML inbox;
+5. when the account has no wiadomosci access (the API keeps answering with a login page), the app
+   shows the synergia HTML inbox (`5-*` rows) with the subject as the title and the sender tidied.
 
 ## One-time setup
 

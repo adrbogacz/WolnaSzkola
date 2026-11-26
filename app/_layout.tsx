@@ -1,6 +1,5 @@
 import 'react-native-gesture-handler';
 import '@/src/background/notifications';
-import '@/src/background/syncTask';
 
 import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';

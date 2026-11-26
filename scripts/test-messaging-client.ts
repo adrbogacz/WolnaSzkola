@@ -7,7 +7,7 @@ import { httpConfig } from '../src/librus/http';
 import { loadReadState, saveReadState } from '../src/storage';
 import { files } from './test-support/shims/expo-file-system';
 import { options as secureOptions, store as secureStore } from './test-support/shims/expo-secure-store';
-import { inboxFixture, messageDetailFixture, POLISH_SAMPLE } from './test-support/librus-fixtures';
+import { inboxFixture, LOGIN_PAGE, messageDetailFixture, POLISH_SAMPLE } from './test-support/librus-fixtures';
 
 let failed = 0;
 
@@ -160,7 +160,62 @@ async function main() {
   assert("new child's inbox cache stays empty", (await switching.peekMessages()) === null);
   assert('nothing was written to disk under the new child', ![...files.keys()].some((key) => key.includes('_jan/inbox')), [...files.keys()]);
 
-  // 8. Rapid read toggles never corrupt the stored flags; old SecureStore data migrates.
+  // 8. Expired wiadomosci session answers with a login page (200 HTML): re-auth and retry,
+  //    never fall back to the synergia HTML inbox.
+  const HTML_INBOX = /synergia\.librus\.pl\/wiadomosci(\/5)?$/;
+  let inboxCalls = 0;
+  hits.length = 0;
+  routes = [
+    ...sessionRoutes(),
+    [INBOX, async (...args) => (++inboxCalls === 1 ? html(LOGIN_PAGE) : json(inboxFixture()))(...args)],
+    [HTML_INBOX, html('<table></table>')],
+  ];
+  const expiring = makeClient();
+  const recovered = await expiring.getMessages({ force: true });
+  assert('login page in the inbox API triggers a retry', inboxCalls === 2, inboxCalls);
+  assert('retried inbox keeps wiadomosci ids', recovered.length === 3 && recovered.every((m) => m.id.startsWith('w-')), recovered.map((m) => m.id));
+  assert('no HTML inbox scrape after a recoverable expiry', count(HTML_INBOX) === 0, count(HTML_INBOX));
+
+  // 9. The account was moved back to the synergia message module: the wiadomosci API keeps
+  //    answering 401 even after re-login. Use the synergia inbox, with fields in the right place,
+  //    and stop paying for the failing hand-off on every refresh.
+  const synergiaInbox = `<table>
+    <tr><td><input type="checkbox"></td><td></td>
+      <td style="font-weight: bold;"><a href="/wiadomosci/1/5/555/f0">Lis Tomasz (Lis Tomasz) [Dyrektor Szkoły]</a></td>
+      <td style="font-weight: bold;"><a href="/wiadomosci/1/5/555/f0">Parking dla hulajnóg przy szkole</a></td>
+      <td>2026-09-25 13:40:00</td></tr></table>`;
+  hits.length = 0;
+  routes = [...sessionRoutes(), [INBOX, json({}, { status: 401 })], [HTML_INBOX, html(synergiaInbox)]];
+  Object.assign(expiring, { relogin: async () => {} });
+  const moved = await expiring.getMessages({ force: true });
+  assert('synergia inbox replaces the unavailable API inbox', moved.length === 1 && moved[0]?.id === '5-555', moved.map((m) => m.id));
+  assert('HTML inbox keeps subject as the topic', moved[0]?.topic === 'Parking dla hulajnóg przy szkole', moved[0]);
+  assert('HTML inbox keeps the person as the sender', moved[0]?.sender === 'Lis Tomasz [Dyrektor Szkoły]', moved[0]);
+  assert('bold HTML row is unread', moved[0]?.read === false, moved[0]);
+  const HANDOFF = /synergia\.librus\.pl\/wiadomosci[23]$/;
+  const apiCalls = count(INBOX);
+  const handoffs = count(HANDOFF);
+  const refreshStarted = Date.now();
+  await expiring.getMessages({ force: true });
+  assert('next refresh skips the unavailable wiadomosci API', count(INBOX) === apiCalls, count(INBOX) - apiCalls);
+  assert('next refresh does not repeat the session hand-off', count(HANDOFF) === handoffs, count(HANDOFF) - handoffs);
+  assert('next refresh is quick', Date.now() - refreshStarted < 500, Date.now() - refreshStarted);
+
+  // 10. Opening a synergia message keeps the list date when the detail page has none of its own.
+  routes = [
+    ...sessionRoutes(),
+    [/synergia\.librus\.pl\/wiadomosci\/1\/5\/555/, html(`<table>
+      <tr><td>Nadawca</td><td>Lis Tomasz (Lis Tomasz) [Dyrektor Szkoły]</td></tr>
+      <tr><td>Temat</td><td>Parking dla hulajnóg przy szkole</td></tr>
+      <tr><td>Wysłano</td><td>2026-09-25 13:40:00</td></tr>
+    </table><div class="container-message-content">Prośba o zapinanie rowerów.</div>`)],
+  ];
+  const openedHtml = await expiring.getMessage('5-555');
+  assert('synergia detail has a body', openedHtml.body.includes('zapinanie rowerów'), openedHtml.body);
+  assert('synergia detail date comes from "Wysłano"', openedHtml.sentAt === '2026-09-25 13:40:00', openedHtml.sentAt);
+  assert('synergia detail keeps the tidy sender', openedHtml.sender === 'Lis Tomasz [Dyrektor Szkoły]', openedHtml.sender);
+
+  // 11. Rapid read toggles never corrupt the stored flags; old SecureStore data migrates.
   secureOptions.delayMs = 3;
   secureStore.set('wolnaszkola.readState.acc.n', '2');
   secureStore.set('wolnaszkola.readState.acc.0', '{"w-1":tr');
@@ -179,7 +234,7 @@ async function main() {
   assert('20 rapid toggles leave exactly the last state', JSON.stringify(reloaded) === JSON.stringify(state), reloaded);
   secureOptions.delayMs = 0;
 
-  // 9. Decoding: clean UTF-8 takes the fast path; double-encoded Polish is still repaired.
+  // 12. Decoding: clean UTF-8 takes the fast path; double-encoded Polish is still repaired.
   const clean = `{"topic":"${POLISH_SAMPLE}"}`;
   assert('clean UTF-8 decodes unchanged', decodeBytesAsText(new TextEncoder().encode(clean)) === clean);
   const doubleEncoded = new TextEncoder().encode(

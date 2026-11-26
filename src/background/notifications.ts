@@ -59,6 +59,12 @@ export async function notifyNewInboxMessages(
   }
 
   const seen = new Set(previous);
+  // No id in common: the inbox switched source (wiadomosci "w-123" vs synergia "5-123" numbering),
+  // not 50 new messages at once. Start over from this list instead of notifying about all of it.
+  if (!ids.some((id) => seen.has(id))) {
+    await saveSeenMessageIds(ids, accountId);
+    return;
+  }
   const fresh = messages.filter((message) => message.id && !seen.has(message.id));
   await saveSeenMessageIds([...new Set([...previous, ...ids])].slice(-200), accountId);
   if (fresh.length === 0 || AppState.currentState === 'active') return;

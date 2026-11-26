@@ -4,7 +4,7 @@ import { by, device, element, expect, waitFor } from 'detox';
 const MOCK = `http://localhost:${process.env.MOCK_PORT ?? 9091}`;
 const LONG_FRAME_MS = 100;
 
-async function setScenario(name: 'normal' | 'librus-down') {
+async function setScenario(name: 'normal' | 'librus-down' | 'session-expired' | 'session-broken') {
   await fetch(`${MOCK}/__scenario`, { method: 'POST', body: JSON.stringify({ name }) });
 }
 
@@ -68,6 +68,30 @@ describe('Messages', () => {
     await element(by.id('messages-list')).swipe('down', 'slow', 0.6);
     await waitFor(element(by.id('sync-banner'))).toBeVisible().withTimeout(20_000);
     await expect(element(by.id('message-row-w-103'))).toBeVisible();
+    await setScenario('normal');
+  });
+
+  it('logs back into wiadomosci when the session expires, without switching to the HTML inbox', async () => {
+    // Clear the banner from the previous test first.
+    await element(by.id('messages-list')).swipe('down', 'slow', 0.6);
+    await waitFor(element(by.id('sync-banner'))).not.toExist().withTimeout(20_000);
+
+    await setScenario('session-expired');
+    await element(by.id('messages-list')).swipe('down', 'slow', 0.6);
+    await waitFor(element(by.id('message-row-w-103'))).toBeVisible().withTimeout(20_000);
+    await expect(element(by.id('sync-banner'))).not.toExist();
+    await expect(element(by.id('message-row-5-103'))).not.toExist();
+    await expect(element(by.text('Zmiana planu lekcji'))).toBeVisible();
+  });
+
+  it('switches to the synergia inbox when the account has no wiadomosci access', async () => {
+    await setScenario('session-broken');
+    await element(by.id('messages-list')).swipe('down', 'slow', 0.6);
+    await waitFor(element(by.id('message-row-5-103'))).toBeVisible().withTimeout(30_000);
+    await expect(element(by.id('sync-banner'))).not.toExist();
+    // Subject stays the title, the sender stays a tidied person label.
+    await expect(element(by.text('Zmiana planu lekcji'))).toBeVisible();
+    await expect(element(by.text('Nowak Ewa [Nauczyciel]'))).toBeVisible();
     await setScenario('normal');
   });
 });

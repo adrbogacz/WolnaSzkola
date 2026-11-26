@@ -1,5 +1,5 @@
 import { decodeHtmlEntities, htmlToText, isoDate } from '@/src/format';
-import { alignMessageFields, isMessageFieldLabel, looksLikePersonName, namesMatch } from '@/src/reply';
+import { alignMessageFields, isMessageFieldLabel, looksLikePersonName, namesMatch, tidySenderLabel } from '@/src/reply';
 
 import { looksLikeGradeMark } from './normalize';
 import type { SchoolGrade, SchoolMessage, SchoolReceiver } from './types';
@@ -362,14 +362,38 @@ export function parseInboxHtml(html: string, kind: 'inbox' | 'sent' = 'inbox'): 
     if (kind === 'inbox' && link[1] === '6') continue;
 
     const tds = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)];
-    const topicIndex = tds.findIndex((td) => /wiadomosci\/1\//i.test(td[0]));
     const cells = tds.map((td) => htmlToText(td[1] ?? '')).filter((cell) => cell.length > 0);
-    const titleFromLink = htmlToText(row.match(/<a[^>]*wiadomosci\/1\/[^>]*>([\s\S]*?)<\/a>/i)?.[1] ?? '');
-    const senderFromTd = topicIndex > 0 ? htmlToText(tds[topicIndex - 1]?.[1] ?? '') : '';
     const date =
       cells.find((cell) => /\d{4}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}\.\d{4}/.test(cell)) ??
       cells[cells.length - 1] ??
       '';
+    const read = kind === 'sent' ? true : !/font-weight:\s*bold/i.test(row);
+    const hasAttachments = /za[lł]acznik|filetype|paperclip/i.test(row);
+
+    // Synergia links both the person cell and the subject cell to the message, in that order:
+    // | ☐ | 📎 | Nadawca (link) | Temat (link) | Data | 🗑 |. Read them by position, not by guessing.
+    const linked = tds
+      .filter((td) => /wiadomosci\/1\//i.test(td[0]))
+      .map((td) => htmlToText(td[1] ?? ''))
+      .filter((text) => text.length > 0 && text !== date && !isMessageFieldLabel(text));
+    if (linked.length >= 2) {
+      messages.push({
+        id: `${link[1]}-${link[2]}`,
+        topic: linked[1] || '(bez tematu)',
+        body: '',
+        sentAt: date,
+        sender: tidySenderLabel(linked[0] ?? '') || 'Szkoła',
+        read,
+        hasAttachments,
+        kind,
+      });
+      continue;
+    }
+
+    // Older layout: only the subject is a link, the person is the cell before it.
+    const topicIndex = tds.findIndex((td) => /wiadomosci\/1\//i.test(td[0]));
+    const titleFromLink = htmlToText(row.match(/<a[^>]*wiadomosci\/1\/[^>]*>([\s\S]*?)<\/a>/i)?.[1] ?? '');
+    const senderFromTd = topicIndex > 0 ? htmlToText(tds[topicIndex - 1]?.[1] ?? '') : '';
     const topicCell =
       (titleFromLink && !isMessageFieldLabel(titleFromLink) ? titleFromLink : '') ||
       cells.find((cell) => cell !== date && !isMessageFieldLabel(cell) && !/^\d+$/.test(cell) && cell.length > 2) ||
@@ -388,8 +412,8 @@ export function parseInboxHtml(html: string, kind: 'inbox' | 'sent' = 'inbox'): 
       body: '',
       sentAt: date,
       sender: aligned.sender,
-      read: kind === 'sent' ? true : !/font-weight:\s*bold/i.test(row),
-      hasAttachments: /za[lł]acznik|filetype|paperclip/i.test(row),
+      read,
+      hasAttachments,
       kind,
     });
   }
@@ -420,6 +444,7 @@ export function parseMessageDetailHtml(html: string, id: string): SchoolMessage 
   const topic = aligned.topic;
   const sentAt =
     fields['Data wysłania'] ||
+    fields['Wysłano'] ||
     fields.Data ||
     htmlToText(html.match(/Data(?:\s+wysłania)?[\s\S]{0,240}?<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/i)?.[1] ?? '');
   const contentMatch =

@@ -90,6 +90,12 @@ export class LibrusClient {
   private child: ChildAccount | null = null;
   private portalReady = false;
   private wiadomosciReady = false;
+  /**
+   * Some accounts are moved back to the synergia message module: the wiadomosci hand-off then
+   * ends on portal.librus.pl and every API call answers 401, even after a fresh login. Until this
+   * time, skip the API (and its slow re-login) and go straight to the synergia inbox.
+   */
+  private wiadomosciUnavailableUntil = 0;
   private lastFreshAt = 0;
   /** In-flight re-login and wiadomosci bootstrap, shared so parallel screens never race on the cookie jar. */
   private recovery: Promise<void> | null = null;
@@ -127,6 +133,7 @@ export class LibrusClient {
     this.child = null;
     this.portalReady = false;
     this.wiadomosciReady = false;
+    this.wiadomosciUnavailableUntil = 0;
     this.lastFreshAt = 0;
     this.inboxCache = [];
     this.sentCache = [];
@@ -1406,6 +1413,9 @@ export class LibrusClient {
   }
 
   private async wiadomosciJson(path: string, attempt = 0): Promise<unknown> {
+    if (Date.now() < this.wiadomosciUnavailableUntil) {
+      throw new KlasowaError('Skrzynka wiadomości jest niedostępna dla tego konta.', 401, undefined, 'auth');
+    }
     await this.ensureWiadomosci();
     const url = `${WIADOMOSCI}${path}`;
     const response = await sessionFetch(this.jar, url, {
@@ -1421,7 +1431,13 @@ export class LibrusClient {
     }
     logNet(`inbox ${response.status} ${path} type=${response.headers.get('content-type') ?? 'none'} bytes=${text.length}`);
 
-    if ((response.status === 401 || response.status === 403) && attempt < 2) {
+    // An expired wiadomosci session does not always answer 401: it can redirect to a login or
+    // portal page that comes back as 200 HTML. Treat that as a lost session too, never as data.
+    const sessionLost =
+      response.status === 401 || response.status === 403 || (response.ok && isHtmlInsteadOfJson(response, text));
+    if (sessionLost) logNet(`inbox session lost ${path} status=${response.status} attempt=${attempt}`);
+
+    if (sessionLost && attempt < 2) {
       this.wiadomosciReady = false;
       if (attempt === 0) {
         await this.refreshOauth();
@@ -1437,13 +1453,19 @@ export class LibrusClient {
       return this.wiadomosciJson(path, attempt + 1);
     }
 
-    if (!response.ok) {
+    if (sessionLost) {
+      this.wiadomosciUnavailableUntil = Date.now() + WIADOMOSCI_RETRY_AFTER_MS;
+      logNet(`inbox api unavailable, using synergia for ${WIADOMOSCI_RETRY_AFTER_MS / 60_000} min`);
       throw new KlasowaError(
-        response.status === 401 || response.status === 403
-          ? 'Nie udało się otworzyć wiadomości. Spróbuj ponownie za chwilę.'
-          : 'Nie udało się otworzyć skrzynki. Spróbuj ponownie za chwilę.',
+        'Nie udało się otworzyć wiadomości. Spróbuj ponownie za chwilę.',
         response.status,
+        undefined,
+        'auth',
       );
+    }
+
+    if (!response.ok) {
+      throw new KlasowaError('Nie udało się otworzyć skrzynki. Spróbuj ponownie za chwilę.', response.status);
     }
 
     if (!text) return {};
@@ -1917,6 +1939,15 @@ function apiErrorMessage(status: number, path: string): string {
   return 'Nie udało się pobrać danych z dziennika.';
 }
 
+const WIADOMOSCI_RETRY_AFTER_MS = 30 * 60 * 1000;
+
+/** A JSON endpoint that answered with a web page (login form, portal, maintenance notice). */
+function isHtmlInsteadOfJson(response: Response, text: string): boolean {
+  const type = response.headers.get('content-type') ?? '';
+  if (/json/i.test(type)) return false;
+  return /text\/html/i.test(type) || /^\s*<(?:!doctype|html|head|body)/i.test(text);
+}
+
 function normalizeMessageId(id: string | string[]): string {
   const raw = Array.isArray(id) ? id[0] : id;
   if (!raw) return '';
@@ -1943,6 +1974,7 @@ function mergeMessages(primary: SchoolMessage, fallback?: SchoolMessage): School
       primary.topic && primary.topic !== '(bez tematu)' ? primary.topic : fallback.topic || primary.topic,
     sender:
       primary.sender && primary.sender !== 'Szkoła' ? primary.sender : fallback.sender || primary.sender || 'Szkoła',
+    sentAt: primary.sentAt?.trim() ? primary.sentAt : fallback.sentAt,
     senderId: primary.senderId || fallback.senderId,
     hasAttachments: primary.hasAttachments || fallback.hasAttachments,
   };

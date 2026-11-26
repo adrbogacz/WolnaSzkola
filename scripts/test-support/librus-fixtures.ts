@@ -43,3 +43,22 @@ export function messageDetailFixture(id = '101') {
     },
   };
 }
+
+/** What an expired wiadomosci session answers with instead of JSON. */
+export const LOGIN_PAGE =
+  '<!DOCTYPE html><html><body><form action="/loguj"><input name="login"><input name="pass"></form></body></html>';
+
+/** synergia /wiadomosci list: the person cell and the subject cell both link to the message. */
+export function inboxHtmlFixture() {
+  const rows = inboxFixture().data.map(
+    (item) => `
+    <tr class="line0">
+      <td class="center"><input type="checkbox" name="tablica_wiadomosci[]" value="${item.messageId}"></td>
+      <td>&nbsp;</td>
+      <td${item.readDate ? '' : ' style="font-weight: bold;"'}><a href="/wiadomosci/1/5/${item.messageId}/f0">${item.senderLastName} ${item.senderFirstName} (${item.senderLastName} ${item.senderFirstName}) [Nauczyciel]</a></td>
+      <td${item.readDate ? '' : ' style="font-weight: bold;"'}><a href="/wiadomosci/1/5/${item.messageId}/f0">${item.topic}</a></td>
+      <td class="center">${item.sendDate}</td>
+    </tr>`,
+  );
+  return `<html><body><table class="decorated stretch"><tbody>${rows.join('')}</tbody></table></body></html>`;
+}
