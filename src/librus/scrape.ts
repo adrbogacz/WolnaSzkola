@@ -1188,6 +1188,45 @@ function parseGradeTitle(title: string): {
   };
 }
 
+const MONTH_NAMES = [
+  'styczeń',
+  'luty',
+  'marzec',
+  'kwiecień',
+  'maj',
+  'czerwiec',
+  'lipiec',
+  'sierpień',
+  'wrzesień',
+  'październik',
+  'listopad',
+  'grudzień',
+];
+
+/**
+ * The month a synergia /terminarz page shows, from its month/year pickers or its "Listopad 2026"
+ * heading. The page opens on the current month whatever was asked for, so its day numbers must not
+ * be read as another month's. Null when the page does not say.
+ */
+export function calendarShownMonth(html: string): { year: number; month: number } | null {
+  const picked = (name: string): number | undefined => {
+    const select = html.match(new RegExp(`<select[^>]*name=["']?${name}["']?[^>]*>([\\s\\S]*?)</select>`, 'i'))?.[1];
+    const option = select?.match(/<option\b[^>]*\bselected\b[^>]*>/i)?.[0];
+    const value = option?.match(/value=["']?(\d+)/i)?.[1];
+    if (value) return Number(value);
+    const hidden = html.match(new RegExp(`<input[^>]*name=["']?${name}["']?[^>]*value=["']?(\\d+)`, 'i'))?.[1];
+    return hidden ? Number(hidden) : undefined;
+  };
+  const month = picked('miesiac');
+  const year = picked('rok');
+  if (month && year && month >= 1 && month <= 12) return { year, month };
+
+  const text = htmlToText(html).toLowerCase();
+  const heading = text.match(new RegExp(`(${MONTH_NAMES.join('|')})\\s+(\\d{4})`));
+  if (heading) return { year: Number(heading[2]), month: MONTH_NAMES.indexOf(heading[1]) + 1 };
+  return null;
+}
+
 export function parseCalendarHtml(
   html: string,
   year: number,
