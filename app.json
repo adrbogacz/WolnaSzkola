@@ -2,7 +2,7 @@
   "expo": {
     "name": "WolnaSzkoła",
     "slug": "wolnaszkola",
-    "version": "1.0.20",
+    "version": "1.0.21",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "wolnaszkola",
@@ -16,7 +16,7 @@
     },
     "android": {
       "package": "pl.wolnaszkola.app",
-      "versionCode": 22,
+      "versionCode": 23,
       "softwareKeyboardLayoutMode": "resize",
       "allowBackup": false,
       "usesCleartextTraffic": true,

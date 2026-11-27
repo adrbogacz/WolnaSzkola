@@ -45,6 +45,15 @@ export async function applySyncInterval(minutes: number): Promise<void> {
     }
 
     const minimumInterval = Platform.OS === 'android' ? Math.max(minutes, 15) : minutes;
+    if (registered) {
+      // expo-background-task keeps an already queued run when registering again, so a new interval
+      // would only apply after the old one fired (up to 12 h). Re-queue only when it changed, so
+      // opening the app does not keep pushing the next check back.
+      const tasks = await TaskManager.getRegisteredTasksAsync();
+      const current = tasks.find((task) => task.taskName === SYNC_TASK)?.options as { minimumInterval?: number } | undefined;
+      if (current?.minimumInterval === minimumInterval) return;
+      await BackgroundTask.unregisterTaskAsync(SYNC_TASK);
+    }
     await BackgroundTask.registerTaskAsync(SYNC_TASK, {
       minimumInterval,
     });
