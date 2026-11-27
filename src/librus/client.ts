@@ -45,6 +45,7 @@ import {
   isAccessDeniedHtml,
   isLoginHtml,
   parseAnnouncementsHtml,
+  calendarShownMonth,
   parseCalendarHtml,
   parseGradeDetailPage,
   parseGradesHtml,
@@ -1054,7 +1055,10 @@ export class LibrusClient {
     month: number,
   ): Promise<Array<{ date: string; label: string; kind: 'free' | 'note' }>> {
     const html = await this.synergiaText('/terminarz');
-    let parsed = parseCalendarHtml(html, year, month);
+    // The page opens on the current month: use it only when that is the month asked for, otherwise
+    // its 1 November holiday would be shown on 1 December.
+    const shown = calendarShownMonth(html);
+    let parsed = shown?.year === year && shown.month === month ? parseCalendarHtml(html, year, month) : [];
     if (parsed.length === 0) {
       const csrf = extractCsrf(html);
       const headers: Record<string, string> = {
@@ -1068,7 +1072,9 @@ export class LibrusClient {
         headers,
         body: new URLSearchParams({ rok: String(year), miesiac: String(month) }).toString(),
       });
-      parsed = parseCalendarHtml(await readResponseText(response), year, month);
+      const page = await readResponseText(response);
+      const answered = calendarShownMonth(page);
+      parsed = !answered || (answered.year === year && answered.month === month) ? parseCalendarHtml(page, year, month) : [];
     }
     return parsed;
   }
